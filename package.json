@@ -1,0 +1,30 @@
+{
+  "name": "candidate-search",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "ingest": "node --env-file=.env.local scripts/ingest.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.44.4",
+    "braces": "^3.0.3",
+    "dotenv": "^16.4.5",
+    "micromatch": "^4.0.8",
+    "next": "^16.2.2",
+    "react": "^18",
+    "react-dom": "^18",
+    "styled-jsx": "^5.1.6",
+    "voyageai": "^0.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.39",
+    "@types/react": "18.3.28",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10",
+    "tailwindcss": "^3.4.4",
+    "typescript": "5.9.3"
+  }
+}
