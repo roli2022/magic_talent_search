@@ -57,10 +57,10 @@ export default function CandidateCard({
   const relStrength  = maxRelevanceScore ? Math.min(baseScore / maxRelevanceScore, 1) : 1;
 
   const matchLabel =
-    normStrength >= 0.75 ? { text: 'Excellent', cls: 'bg-amber-900/60 text-amber-300  border-amber-700/60' } :
-    normStrength >= 0.50 ? { text: 'Strong',    cls: 'bg-slate-600/40 text-slate-100  border-slate-400/70' } :
-    normStrength >= 0.25 ? { text: 'OK',         cls: 'bg-pink-950/60  text-pink-300   border-pink-800/50'  } :
-                           { text: 'Partial',   cls: 'bg-blue-950/70  text-blue-300   border-blue-800/60'  };
+    normStrength >= 0.75 ? { text: 'Excellent', cls: 'bg-amber-900/60 text-amber-300 border-amber-700/60', borderCls: 'border-amber-700/50 hover:border-amber-500/70', barCls: 'from-amber-600 to-amber-400'    } :
+    normStrength >= 0.50 ? { text: 'Strong',    cls: 'bg-slate-600/40 text-slate-100 border-slate-400/70', borderCls: 'border-slate-500/40 hover:border-slate-400/70', barCls: 'from-slate-400 to-slate-300'    } :
+    normStrength >= 0.25 ? { text: 'OK',        cls: 'bg-pink-950/60  text-pink-300  border-pink-800/50',  borderCls: 'border-pink-900/50  hover:border-pink-700/60',  barCls: 'from-pink-700  to-pink-500'     } :
+                           { text: 'Partial',   cls: 'bg-blue-950/70  text-blue-300  border-blue-800/60',  borderCls: 'border-blue-900/50  hover:border-blue-700/60',  barCls: 'from-blue-700  to-blue-500'     };
 
   // ── AI summary streaming ────────────────────────────────────────────────────
   const [summary, setSummary]     = useState('');
@@ -96,7 +96,7 @@ export default function CandidateCard({
   }, [query]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="bg-[#1c2128] rounded-2xl border border-[#373e47] hover:border-[#4a9eff] transition-all duration-200 shadow-md shadow-black/30 overflow-hidden">
+    <div className={`bg-[#1c2128] rounded-2xl border transition-all duration-200 shadow-md shadow-black/30 overflow-hidden ${matchLabel.borderCls}`}>
       <div className="p-5">
         <div className="flex items-start gap-4">
 
@@ -171,10 +171,10 @@ export default function CandidateCard({
         </div>
       </div>
 
-      {/* Relative strength bar */}
-      <div className="h-[5px] w-full bg-[#2d333b]">
+      {/* Relative strength bar — colour matches match tier */}
+      <div className="h-[3px] w-full bg-[#2d333b]">
         <div
-          className="h-full bg-gradient-to-r from-cyan-500 to-cyan-300 transition-all duration-500"
+          className={`h-full bg-gradient-to-r transition-all duration-500 ${matchLabel.barCls}`}
           style={{ width: `${Math.round(relStrength * 100)}%` }}
         />
       </div>
