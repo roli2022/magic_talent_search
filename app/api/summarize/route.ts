@@ -35,7 +35,8 @@ Rules:
 - Only reference information explicitly in the profile above. Do not infer or invent.
 - Do NOT render a verdict, say whether they are suitable or not, or point out gaps/mismatches. Surface relevant strengths only.
 - Be specific and factual. No filler phrases like "Overall," or "In summary,".
-- Maximum 60 words total.`;
+- Wrap 3–5 key phrases that directly match the search criteria in **double asterisks** — e.g. **senior product manager**, **Bangalore**, **B2B SaaS**. Only bold phrases genuinely present in the profile.
+- Maximum 70 words total.`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',

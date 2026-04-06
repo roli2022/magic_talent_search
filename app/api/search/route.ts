@@ -8,8 +8,31 @@ const supabase = createClient(
 
 // ── Pass 0: Query rewrite via Claude ─────────────────────────────────────────
 
-async function rewriteQuery(raw: string): Promise<string> {
+async function rewriteQuery(raw: string, previousQuery?: string): Promise<string> {
   try {
+    const content = previousQuery
+      ? `You are helping a recruiter refine their candidate search query.
+
+Previous search query:
+${previousQuery}
+
+The recruiter wants to make this change or addition:
+"${raw}"
+
+Produce an updated search query that incorporates the refinement into the previous query.
+Keep all unchanged requirements. Only modify or add what the recruiter asked for.
+If there is a "Must-have:" line, keep it as a separate line with that exact prefix.
+Return only the updated query. No explanation, no preamble.`
+      : `You are helping rewrite a recruiter's candidate search query into clean, professional language.
+
+Fix typos, grammar, and awkward phrasing. Remove conversational filler (e.g. "yeah", "like", "basically").
+Preserve every requirement exactly — location, experience level, skills, education, must-haves.
+If there is a "Must-have:" line, keep it as a separate line with that exact prefix.
+Return only the rewritten query. No explanation, no preamble.
+
+Query:
+${raw}`;
+
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -20,18 +43,7 @@ async function rewriteQuery(raw: string): Promise<string> {
       body: JSON.stringify({
         model: 'claude-haiku-4-5',
         max_tokens: 300,
-        messages: [{
-          role: 'user',
-          content: `You are helping rewrite a recruiter's candidate search query into clean, professional language.
-
-Fix typos, grammar, and awkward phrasing. Remove conversational filler (e.g. "yeah", "like", "basically").
-Preserve every requirement exactly — location, experience level, skills, education, must-haves.
-If there is a "Must-have:" line, keep it as a separate line with that exact prefix.
-Return only the rewritten query. No explanation, no preamble.
-
-Query:
-${raw}`,
-        }],
+        messages: [{ role: 'user', content }],
       }),
     });
     if (!res.ok) {
@@ -77,12 +89,19 @@ interface RawCandidate {
 }
 
 function buildSnippet(c: RawCandidate): string {
-  const topExp = c.top_experience?.[0];
-  const expPart = topExp ? `${topExp.title} at ${topExp.company}` : '';
-  const skillsPart = c.skills?.slice(0, 10).join(', ') || '';
-  return [c.name, c.headline, skillsPart && `Skills: ${skillsPart}`, expPart]
-    .filter(Boolean)
-    .join('. ');
+  const exps = (c.top_experience || []).slice(0, 3)
+    .map(e => `${e.title} at ${e.company}${e.date ? ` (${e.date})` : ''}`)
+    .join('; ');
+  const skillsPart = c.skills?.slice(0, 15).join(', ') || '';
+  const summaryPart = c.summary ? c.summary.slice(0, 300) : '';
+  return [
+    c.name,
+    c.headline,
+    c.location && `Location: ${c.location}`,
+    skillsPart && `Skills: ${skillsPart}`,
+    exps && `Experience: ${exps}`,
+    summaryPart && `Summary: ${summaryPart}`,
+  ].filter(Boolean).join('. ');
 }
 
 // ── Pass 2a: Reranker ─────────────────────────────────────────────────────────
@@ -101,7 +120,7 @@ async function rerankCandidates(
     body: JSON.stringify({
       query,
       documents,
-      model: 'rerank-2-lite',
+      model: 'rerank-2',
       top_k: 50,
       return_documents: false,
     }),
@@ -192,7 +211,7 @@ function applyMustHaveBoost(
 
 export async function POST(req: NextRequest) {
   try {
-    const { query, mustHave } = await req.json();
+    const { query, mustHave, previousQuery } = await req.json();
 
     if (!query || typeof query !== 'string' || query.trim().length < 2) {
       return NextResponse.json({ error: 'Query must be at least 2 characters' }, { status: 400 });
@@ -200,14 +219,14 @@ export async function POST(req: NextRequest) {
 
     const trimmed = query.trim();
 
-    // Pass 0 — rewrite query into clean professional language
-    const rewritten = await rewriteQuery(trimmed);
+    // Pass 0 — rewrite (or combine previous + refinement) into clean professional language
+    const rewritten = await rewriteQuery(trimmed, previousQuery?.trim() || undefined);
 
     // Pass 1 — embed → vector search top 200
     const embedding = await embedQuery(rewritten);
     const { data: candidates, error } = await supabase.rpc('match_candidates', {
       query_embedding: `[${embedding.join(',')}]`,
-      match_count: 200,
+      match_count: 500,
     });
 
     if (error) {

@@ -63,9 +63,20 @@ export default function CandidateCard({
                            { text: 'Partial',   cls: 'bg-blue-950/70  text-blue-300  border-blue-800/60',  borderCls: 'border-blue-900/50  hover:border-blue-700/60',  barCls: 'from-blue-700  to-blue-500'     };
 
   // ── AI summary streaming ────────────────────────────────────────────────────
-  const [summary, setSummary]     = useState('');
+  const [summary, setSummary]       = useState('');
+  const [sumDone, setSumDone]       = useState(false);
   const [sumLoading, setSumLoading] = useState(false);
   const fetchedRef = useRef(false);
+
+  // Parse **bold** markers into cyan highlighted spans
+  function renderSummary(text: string) {
+    const parts = text.split(/\*\*(.+?)\*\*/g);
+    return parts.map((part, i) =>
+      i % 2 === 1
+        ? <span key={i} className="text-cyan-300 font-semibold">{part}</span>
+        : <span key={i}>{part}</span>
+    );
+  }
 
   useEffect(() => {
     if (!query || fetchedRef.current) return;
@@ -90,6 +101,7 @@ export default function CandidateCard({
           text += decoder.decode(value, { stream: true });
           setSummary(text);
         }
+        setSumDone(true);
       } catch { /* silently skip */ }
       finally { setSumLoading(false); }
     })();
@@ -137,9 +149,8 @@ export default function CandidateCard({
               </div>
 
               {/* Match label badge */}
-              <div className={`flex-shrink-0 text-[12px] font-semibold px-3 py-1 rounded-lg border flex items-center gap-1.5 ${matchLabel.cls}`}>
+              <div className={`flex-shrink-0 text-[12px] font-semibold px-3 py-1 rounded-lg border ${matchLabel.cls}`}>
                 {matchLabel.text}
-                <span className="opacity-60 font-normal text-[11px]">{Math.round(normStrength * 100)}%</span>
               </div>
             </div>
 
@@ -164,7 +175,9 @@ export default function CandidateCard({
                 </div>
               )}
               {summary && (
-                <p className="text-[12px] text-gray-400 leading-relaxed">{summary}</p>
+                <p className="text-[12px] text-gray-400 leading-relaxed">
+                  {sumDone ? renderSummary(summary) : summary}
+                </p>
               )}
             </div>
           </div>

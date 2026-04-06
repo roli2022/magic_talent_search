@@ -24,7 +24,7 @@ interface Candidate {
   relevanceScore?: number;
 }
 
-type Stage = 'intro' | 'nudging' | 'confirming' | 'results';
+type Stage = 'intro' | 'nudging' | 'confirming' | 'results' | 'refining';
 
 const NUDGES = [
   {
@@ -104,12 +104,15 @@ export default function SearchPage() {
   const [searchHistory, setSearchHistory]   = useState<{ label: string; query: string; mustHave: string }[]>([]);
   const [hasSearched, setHasSearched]       = useState(false);
 
+  const [refinementInput, setRefinementInput] = useState('');
+
   const nudgeInputRef  = useRef<HTMLInputElement>(null);
   const confirmRef     = useRef<HTMLTextAreaElement>(null);
+  const refineRef      = useRef<HTMLInputElement>(null);
   const rightPanelRef  = useRef<HTMLDivElement>(null);
 
   // Stay split once first search has run — only centered on fresh page load
-  const isSplit = hasSearched || loading || stage === 'results' || (results.length > 0 && (stage === 'confirming' || stage === 'nudging'));
+  const isSplit = hasSearched || loading || stage === 'results' || stage === 'refining' || (results.length > 0 && (stage === 'confirming' || stage === 'nudging'));
 
   // Nudges filtered to only those not already covered by the initial query
   const activeNudges = NUDGES.filter(n => !detectedFields[n.key]);
@@ -121,6 +124,49 @@ export default function SearchPage() {
   useEffect(() => {
     if (stage === 'confirming') confirmRef.current?.focus();
   }, [stage]);
+
+  useEffect(() => {
+    if (stage === 'refining') refineRef.current?.focus();
+  }, [stage]);
+
+  async function handleRefine(e: React.FormEvent) {
+    e.preventDefault();
+    if (!refinementInput.trim()) return;
+    setLoading(true);
+    setError(null);
+    setStage('results');
+    try {
+      const res = await fetch('/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: refinementInput.trim(),
+          previousQuery: rewrittenQuery || finalQuery,
+          mustHave: values.musthave || detectedFields.musthave || '',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Search failed');
+      const rq = data.rewrittenQuery || refinementInput;
+      setResults(data.results);
+      setRewrittenQuery(rq);
+      setFinalQuery(rq);
+      setPoolMinScore(data.poolMinScore ?? 0);
+      setPoolMaxScore(data.poolMaxScore ?? 1);
+      setPage(1);
+      setRefinementInput('');
+      rightPanelRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      setSearchHistory(prev => {
+        const entry = { label: rq, query: rq, mustHave: '' };
+        const deduped = prev.filter(h => h.query !== rq);
+        return [entry, ...deduped].slice(0, 5);
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleIntroSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -244,40 +290,46 @@ export default function SearchPage() {
       {/* ── LEFT PANEL ── */}
       <div
         className={`
-          flex-shrink-0 overflow-y-auto transition-all duration-500 ease-in-out
+          flex-shrink-0 transition-all duration-500 ease-in-out
           ${isSplit
-            ? 'w-2/5 border-r border-[#21262d] flex flex-col justify-center'
-            : 'w-full flex items-center justify-center'
+            ? 'w-2/5 border-r border-[#21262d] overflow-y-auto flex flex-col justify-center'
+            : 'w-full h-full flex items-center justify-center overflow-y-auto'
           }
         `}
       >
         <div
           className={`
-            transition-all duration-500 ease-in-out px-8 py-14
-            ${isSplit ? 'w-full' : 'w-full max-w-2xl'}
+            transition-all duration-500 ease-in-out px-8
+            ${isSplit ? 'w-full py-14' : 'w-full max-w-xl py-0'}
           `}
         >
 
           {/* ── INTRO ── */}
           {stage === 'intro' && (
-            <div>
-              <div className="mb-10">
-                <div className="inline-flex items-center gap-2 bg-cyan-950 text-cyan-400 text-xs font-semibold px-3 py-1.5 rounded-full border border-cyan-900 mb-7">
-                  <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />
-                  30,000 candidates · India
-                </div>
-                <h1 className="text-5xl font-black tracking-tight leading-tight mb-4">
-                  Find great talent.{' '}
-                  <span className="text-cyan-400">Fast ⚡</span>
-                </h1>
-                <p className="text-gray-500 text-base">
-                  Describe who you need in plain English — we'll find the best matches.
-                </p>
+            <div className="flex flex-col gap-6">
+              {/* Capsule */}
+              <div className="inline-flex items-center gap-2 bg-cyan-950 text-cyan-400 text-xs font-semibold px-3 py-1.5 rounded-full border border-cyan-900 self-start">
+                <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />
+                100K+ candidates · India
               </div>
 
-              <form onSubmit={handleIntroSubmit}>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">
-                  Who are you looking for?
+              {/* Avatar + title */}
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-violet-600 to-cyan-500 flex items-center justify-center text-2xl flex-shrink-0 shadow-lg shadow-violet-900/40 ring-2 ring-white/10">
+                  🧙‍♀️
+                </div>
+                <div>
+                  <p className="text-gray-500 text-sm leading-none mb-1">Hi there! I'm your</p>
+                  <h1 className="text-2xl font-black tracking-tight text-white leading-tight">
+                    magical talent sourcer <span className="text-cyan-400">✨</span>
+                  </h1>
+                </div>
+              </div>
+
+              {/* Input */}
+              <form onSubmit={handleIntroSubmit} className="flex flex-col gap-3">
+                <label className="block text-sm font-medium text-gray-500">
+                  Tell me who you need — I'll find your best matches.
                 </label>
                 <textarea
                   value={mainQuery}
@@ -290,7 +342,7 @@ export default function SearchPage() {
                   }}
                   placeholder="e.g. a senior product manager with 8+ years who has scaled a B2B SaaS product from 0 to 1, ideally with a background in fintech or enterprise software"
                   rows={4}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-2xl px-5 py-4 text-base text-white placeholder:text-gray-600 focus:outline-none focus:border-cyan-600 resize-none transition-colors mb-3"
+                  className="w-full bg-gray-900 border border-gray-700 rounded-2xl px-5 py-4 text-base text-white placeholder:text-gray-600 focus:outline-none focus:border-cyan-600 resize-none transition-colors"
                   autoFocus
                 />
                 <div className="flex justify-end">
@@ -380,7 +432,7 @@ export default function SearchPage() {
 
               <p className="text-2xl font-black text-white mb-1">Almost there.</p>
               <p className="text-gray-500 text-sm mb-6">
-                Here's what we'll search for. Feel free to reword or add anything.
+                Here's what I'll search for. Feel free to reword or add anything.
               </p>
 
               <textarea
@@ -412,16 +464,15 @@ export default function SearchPage() {
           {/* ── RESULTS SIDEBAR ── */}
           {stage === 'results' && !loading && (
             <div className="flex flex-col gap-8">
-              {/* Badge + Title */}
-              <div>
-                <div className="inline-flex items-center gap-2 bg-cyan-950 text-cyan-400 text-xs font-semibold px-3 py-1.5 rounded-full border border-cyan-900 mb-4">
-                  <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />
-                  30,000 candidates · India
+              {/* Avatar + identity */}
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-600 to-cyan-500 flex items-center justify-center text-xl flex-shrink-0 shadow-md shadow-violet-900/40 ring-1 ring-white/10">
+                  🧙‍♀️
                 </div>
-                <h1 className="text-3xl font-black tracking-tight leading-tight">
-                  Find great talent.{' '}
-                  <span className="text-cyan-400">Fast ⚡</span>
-                </h1>
+                <div>
+                  <p className="text-gray-500 text-xs leading-none mb-1">Hi there! I'm your</p>
+                  <p className="text-white text-sm font-bold leading-none">magical talent sourcer <span className="text-cyan-400">✨</span></p>
+                </div>
               </div>
 
               {/* Searched for */}
@@ -437,7 +488,7 @@ export default function SearchPage() {
               {/* Actions */}
               <div className="flex items-center justify-between">
                 <button
-                  onClick={() => setStage('confirming')}
+                  onClick={() => setStage('refining')}
                   className="text-sm text-cyan-500 hover:text-cyan-400 font-medium transition-colors"
                 >
                   ← Refine search
@@ -450,6 +501,68 @@ export default function SearchPage() {
                 </button>
               </div>
 
+            </div>
+          )}
+
+          {/* ── REFINING ── */}
+          {stage === 'refining' && (
+            <div className="flex flex-col gap-6">
+              {/* Avatar + identity */}
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-600 to-cyan-500 flex items-center justify-center text-xl flex-shrink-0 shadow-md shadow-violet-900/40 ring-1 ring-white/10">
+                  🧙‍♀️
+                </div>
+                <div>
+                  <p className="text-gray-500 text-xs leading-none mb-1">Hi there! I'm your</p>
+                  <p className="text-white text-sm font-bold leading-none">magical talent sourcer <span className="text-cyan-400">✨</span></p>
+                </div>
+              </div>
+
+              {/* Previous query context */}
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-600 mb-2">
+                  Current search
+                </p>
+                <p className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap line-clamp-3">
+                  {rewrittenQuery || finalQuery}
+                </p>
+              </div>
+
+              {/* Refinement input */}
+              <form onSubmit={handleRefine} className="flex flex-col gap-3">
+                <label className="text-base font-bold text-white">
+                  What would you like to change?
+                </label>
+                <input
+                  ref={refineRef}
+                  type="text"
+                  value={refinementInput}
+                  onChange={e => setRefinementInput(e.target.value)}
+                  placeholder="e.g. focus more on team leadership, remove insurance"
+                  className="w-full bg-gray-900 border border-gray-700 rounded-2xl px-5 py-4 text-base text-white placeholder:text-gray-600 focus:outline-none focus:border-cyan-600 transition-colors"
+                />
+                {error && (
+                  <div className="bg-red-950 border border-red-800 text-red-400 rounded-xl px-4 py-3 text-sm">
+                    {error}
+                  </div>
+                )}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="submit"
+                    disabled={!refinementInput.trim() || loading}
+                    className="bg-cyan-500 text-gray-950 px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-cyan-400 disabled:opacity-30 transition-colors"
+                  >
+                    {loading ? 'Searching…' : '🔍 Refine'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStage('results')}
+                    className="text-sm text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           )}
 
