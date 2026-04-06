@@ -27,13 +27,14 @@ export async function POST(req: NextRequest) {
 Here is a candidate's LinkedIn profile:
 ${profile}
 
-Write exactly 2 sentences explaining why this candidate is or isn't a good fit for the search.
-- Sentence 1: their overall fit for the role/search
-- Sentence 2: one specific standout signal (strength or gap) from their actual profile
+Write exactly 2 sentences highlighting what is most relevant about this candidate for the search.
+- Sentence 1: the strongest relevant aspect of their background (role, experience, or skills)
+- Sentence 2: one specific detail from their profile that stands out in the context of this search
 
 Rules:
 - Only reference information explicitly in the profile above. Do not infer or invent.
-- Be direct and specific. No filler phrases like "Overall," or "In summary,".
+- Do NOT render a verdict, say whether they are suitable or not, or point out gaps/mismatches. Surface relevant strengths only.
+- Be specific and factual. No filler phrases like "Overall," or "In summary,".
 - Maximum 60 words total.`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
