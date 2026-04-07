@@ -226,7 +226,7 @@ export async function POST(req: NextRequest) {
     const embedding = await embedQuery(rewritten);
     const { data: candidates, error } = await supabase.rpc('match_candidates', {
       query_embedding: `[${embedding.join(',')}]`,
-      match_count: 500,
+      match_count: 200,
     });
 
     if (error) {
