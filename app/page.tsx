@@ -22,9 +22,33 @@ interface Candidate {
   top_experience: Experience[];
   similarity: number;
   relevanceScore?: number;
+  // enriched fields
+  enriched_at?: string | null;
+  years_experience?: number | null;
+  seniority?: string | null;
+  avg_tenure_years?: number | null;
+  job_switches?: number | null;
+  mobility_likelihood?: string | null;
+  likely_open_to_move?: boolean | null;
+  manages_people?: boolean | null;
+  team_size_managed?: string | null;
+  top_school?: boolean | null;
+  school_tier?: string | null;
+  has_mba?: boolean | null;
+  is_founder?: boolean | null;
+  has_0_to_1_exp?: boolean | null;
+  has_scale_exp?: boolean | null;
+  builder_score?: number | null;
+  builder_evidence?: string | null;
+  ownership_score?: number | null;
+  is_outlier?: boolean | null;
+  outlier_reason?: string | null;
+  primary_function?: string | null;
+  location_city?: string | null;
 }
 
 type Stage = 'intro' | 'nudging' | 'confirming' | 'results' | 'refining';
+type IntroTab = 'type' | 'jd';
 
 const NUDGES = [
   {
@@ -101,10 +125,21 @@ export default function SearchPage() {
   const PAGE_SIZE = 10;
   const [loading, setLoading]               = useState(false);
   const [error, setError]                   = useState<string | null>(null);
-  const [searchHistory, setSearchHistory]   = useState<{ label: string; query: string; mustHave: string }[]>([]);
+  const [searchHistory, setSearchHistory]   = useState<{ label: string; query: string; mustHave: string; type: 'new' | 'refined' }[]>([]);
   const [hasSearched, setHasSearched]       = useState(false);
+  const [activeFilters, setActiveFilters]   = useState<Record<string, unknown>>({});
 
   const [refinementInput, setRefinementInput] = useState('');
+
+  // JD upload state
+  const [introTab, setIntroTab]             = useState<IntroTab>('type');
+  const [jdFile, setJdFile]                 = useState<File | null>(null);
+  const [jdDragging, setJdDragging]         = useState(false);
+  const [jdParsing, setJdParsing]           = useState(false);
+  const [jdRequirements, setJdRequirements] = useState<string[]>([]);
+  const [jdError, setJdError]               = useState<string | null>(null);
+  const [jdRebuilding, setJdRebuilding]     = useState(false);
+  const jdInputRef = useRef<HTMLInputElement>(null);
 
   const nudgeInputRef  = useRef<HTMLInputElement>(null);
   const confirmRef     = useRef<HTMLTextAreaElement>(null);
@@ -153,11 +188,12 @@ export default function SearchPage() {
       setFinalQuery(rq);
       setPoolMinScore(data.poolMinScore ?? 0);
       setPoolMaxScore(data.poolMaxScore ?? 1);
+      setActiveFilters(data.filters ?? {});
       setPage(1);
       setRefinementInput('');
       rightPanelRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       setSearchHistory(prev => {
-        const entry = { label: rq, query: rq, mustHave: '' };
+        const entry = { label: rq, query: rq, mustHave: '', type: 'refined' as const };
         const deduped = prev.filter(h => h.query !== rq);
         return [entry, ...deduped].slice(0, 5);
       });
@@ -203,6 +239,47 @@ export default function SearchPage() {
     }
   }
 
+  async function handleJdParse(file: File) {
+    setJdFile(file);
+    setJdParsing(true);
+    setJdError(null);
+    setJdRequirements([]);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch('/api/parse-jd', { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to parse JD');
+      setJdRequirements(data.requirements || []);
+      setFinalQuery(data.query || '');
+      setStage('confirming');
+    } catch (err) {
+      setJdError(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setJdParsing(false);
+    }
+  }
+
+  async function handleDeleteRequirement(index: number) {
+    const remaining = jdRequirements.filter((_, i) => i !== index);
+    setJdRequirements(remaining);
+    if (remaining.length === 0) {
+      setFinalQuery('');
+      return;
+    }
+    setJdRebuilding(true);
+    try {
+      const res = await fetch('/api/rebuild-query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requirements: remaining }),
+      });
+      const data = await res.json();
+      if (data.query) setFinalQuery(data.query);
+    } catch { /* keep existing query on failure */ }
+    finally { setJdRebuilding(false); }
+  }
+
   function advanceNudge(inputValue: string) {
     const newValues = { ...values, [activeNudges[activeNudge].key]: normalizeNudgeInput(inputValue) };
     setValues(newValues);
@@ -240,12 +317,13 @@ export default function SearchPage() {
       setRewrittenQuery(rq);
       setPoolMinScore(data.poolMinScore ?? 0);
       setPoolMaxScore(data.poolMaxScore ?? 1);
+      setActiveFilters(data.filters ?? {});
       setPage(1);
       setHasSearched(true);
       setStage('results');
       // Record in history (dedup, keep last 5)
       setSearchHistory(prev => {
-        const entry = { label: rq, query: q, mustHave: mh };
+        const entry = { label: rq, query: q, mustHave: mh, type: 'new' as const };
         const deduped = prev.filter(h => h.query !== q);
         return [entry, ...deduped].slice(0, 5);
       });
@@ -270,6 +348,9 @@ export default function SearchPage() {
     setPage(1);
     setResults([]);
     setError(null);
+    setJdFile(null);
+    setJdRequirements([]);
+    setJdError(null);
   }
 
   const composed = buildComposed(mainQuery, { ...values, [activeNudges[activeNudge]?.key]: nudgeInput });
@@ -326,35 +407,130 @@ export default function SearchPage() {
                 </div>
               </div>
 
-              {/* Input */}
-              <form onSubmit={handleIntroSubmit} className="flex flex-col gap-3">
-                <label className="block text-sm font-medium text-gray-500">
-                  Tell me who you need — I'll find your best matches.
-                </label>
-                <textarea
-                  value={mainQuery}
-                  onChange={e => setMainQuery(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey && mainQuery.trim()) {
+              {/* Tab toggle */}
+              <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1 self-start">
+                <button
+                  type="button"
+                  onClick={() => setIntroTab('type')}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+                    introTab === 'type'
+                      ? 'bg-cyan-500 text-gray-950'
+                      : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  Describe role
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setIntroTab('jd'); setJdError(null); }}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+                    introTab === 'jd'
+                      ? 'bg-cyan-500 text-gray-950'
+                      : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  Upload JD
+                </button>
+              </div>
+
+              {/* ── Tab: Describe role ── */}
+              {introTab === 'type' && (
+                <form onSubmit={handleIntroSubmit} className="flex flex-col gap-3">
+                  <label className="block text-sm font-medium text-gray-500">
+                    Tell me who you need — I'll find your best matches.
+                  </label>
+                  <textarea
+                    value={mainQuery}
+                    onChange={e => setMainQuery(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey && mainQuery.trim()) {
+                        e.preventDefault();
+                        handleIntroSubmit(e as unknown as React.FormEvent);
+                      }
+                    }}
+                    placeholder="e.g. a senior product manager with 8+ years who has scaled a B2B SaaS product from 0 to 1, ideally with a background in fintech or enterprise software"
+                    rows={4}
+                    className="w-full bg-gray-900 border border-gray-700 rounded-2xl px-5 py-4 text-base text-white placeholder:text-gray-600 focus:outline-none focus:border-cyan-600 resize-none transition-colors"
+                    autoFocus
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={!mainQuery.trim() || analyzing}
+                      className="bg-cyan-500 text-gray-950 px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-cyan-400 disabled:opacity-30 transition-colors"
+                    >
+                      {analyzing ? 'Thinking…' : '🔍 Find'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* ── Tab: Upload JD ── */}
+              {introTab === 'jd' && (
+                <div className="flex flex-col gap-4">
+                  <p className="text-sm text-gray-500">
+                    Upload a job description PDF — I'll extract the key requirements and search for matching candidates.
+                  </p>
+
+                  {/* Drop zone */}
+                  <div
+                    onClick={() => jdInputRef.current?.click()}
+                    onDragOver={e => { e.preventDefault(); setJdDragging(true); }}
+                    onDragLeave={() => setJdDragging(false)}
+                    onDrop={e => {
                       e.preventDefault();
-                      handleIntroSubmit(e as unknown as React.FormEvent);
-                    }
-                  }}
-                  placeholder="e.g. a senior product manager with 8+ years who has scaled a B2B SaaS product from 0 to 1, ideally with a background in fintech or enterprise software"
-                  rows={4}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-2xl px-5 py-4 text-base text-white placeholder:text-gray-600 focus:outline-none focus:border-cyan-600 resize-none transition-colors"
-                  autoFocus
-                />
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={!mainQuery.trim() || analyzing}
-                    className="bg-cyan-500 text-gray-950 px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-cyan-400 disabled:opacity-30 transition-colors"
+                      setJdDragging(false);
+                      const f = e.dataTransfer.files[0];
+                      if (f) handleJdParse(f);
+                    }}
+                    className={`
+                      relative border-2 border-dashed rounded-2xl px-6 py-10 flex flex-col items-center justify-center gap-3 cursor-pointer transition-colors
+                      ${jdDragging
+                        ? 'border-cyan-500 bg-cyan-950/30'
+                        : jdFile
+                          ? 'border-cyan-800 bg-cyan-950/20'
+                          : 'border-gray-700 hover:border-gray-500 bg-gray-900/50'
+                      }
+                    `}
                   >
-                    {analyzing ? 'Thinking…' : '🔍 Find'}
-                  </button>
+                    <input
+                      ref={jdInputRef}
+                      type="file"
+                      accept="application/pdf"
+                      className="hidden"
+                      onChange={e => {
+                        const f = e.target.files?.[0];
+                        if (f) handleJdParse(f);
+                      }}
+                    />
+
+                    {jdParsing ? (
+                      <>
+                        <div className="w-8 h-8 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin" />
+                        <p className="text-sm text-cyan-400 font-medium">Reading job description…</p>
+                      </>
+                    ) : jdFile && !jdError ? (
+                      <>
+                        <span className="text-3xl">📄</span>
+                        <p className="text-sm text-cyan-300 font-medium text-center">{jdFile.name}</p>
+                        <p className="text-xs text-gray-600">Click to replace</p>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-3xl text-gray-600">📂</span>
+                        <p className="text-sm text-gray-400 font-medium">Drop PDF here or click to browse</p>
+                        <p className="text-xs text-gray-700">PDF only · max 10 MB</p>
+                      </>
+                    )}
+                  </div>
+
+                  {jdError && (
+                    <div className="bg-red-950 border border-red-800 text-red-400 rounded-xl px-4 py-3 text-sm">
+                      {jdError}
+                    </div>
+                  )}
                 </div>
-              </form>
+              )}
             </div>
           )}
 
@@ -432,9 +608,50 @@ export default function SearchPage() {
 
               <p className="text-2xl font-black text-white mb-1">Almost there.</p>
               <p className="text-gray-500 text-sm mb-6">
-                Here's what I'll search for. Feel free to reword or add anything.
+                {jdRequirements.length > 0
+                  ? 'Remove any requirements that don\'t apply, then search.'
+                  : 'Here\'s what I\'ll search for. Feel free to reword or add anything.'}
               </p>
 
+              {/* JD requirements list */}
+              {jdRequirements.length > 0 && (
+                <div className="flex flex-col gap-1.5 mb-5">
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-600 mb-1">
+                    Key requirements
+                  </p>
+                  {jdRequirements.map((req, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 bg-[#0d1117] border border-[#21262d] rounded-xl px-4 py-2.5 group"
+                    >
+                      <span className="text-[11px] font-medium text-gray-700 w-4 flex-shrink-0 tabular-nums">
+                        {i + 1}
+                      </span>
+                      <span className="text-sm text-gray-500 flex-1">{req}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRequirement(i)}
+                        className="text-gray-600 hover:text-gray-300 transition-colors flex-shrink-0 text-base leading-none"
+                        title="Remove"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-600">
+                  Search query — edit as needed
+                </p>
+                {jdRebuilding && (
+                  <span className="text-[11px] text-gray-600 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-700 animate-pulse inline-block" />
+                    Updating…
+                  </span>
+                )}
+              </div>
               <textarea
                 ref={confirmRef}
                 value={finalQuery}
@@ -567,25 +784,61 @@ export default function SearchPage() {
           )}
 
           {/* ── PREVIOUS SEARCHES (persistent) ── */}
-          {searchHistory.length > 0 && (
-            <div className="mt-10 pt-8 border-t border-[#21262d]">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-700 mb-3">
-                Previous searches
-              </p>
-              <div className="flex flex-col gap-2.5">
-                {searchHistory.map((entry, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleSearch(entry.query, entry.mustHave)}
-                    className="text-left text-xs text-gray-500 hover:text-gray-300 leading-snug transition-colors line-clamp-2"
-                    title={entry.label}
-                  >
-                    {entry.label}
-                  </button>
-                ))}
+          {searchHistory.length > 0 && (() => {
+            // Group: collect leading 'refined' entries, then attach to the 'new' that follows
+            type HistoryEntry = typeof searchHistory[number];
+            const groups: { base: HistoryEntry; refinements: HistoryEntry[] }[] = [];
+            let pending: HistoryEntry[] = [];
+            for (const entry of searchHistory) {
+              if (entry.type === 'refined') {
+                pending.push(entry);
+              } else {
+                groups.push({ base: entry, refinements: pending });
+                pending = [];
+              }
+            }
+            // Any trailing refinements with no parent new-search
+            if (pending.length) groups.push({ base: pending[0], refinements: pending.slice(1) });
+
+            return (
+              <div className="mt-10 pt-8 border-t border-[#21262d]">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-700 mb-3">
+                  Previous searches
+                </p>
+                <div className="flex flex-col gap-4">
+                  {groups.map((group, gi) => (
+                    <div key={gi}>
+                      {/* New search */}
+                      <button
+                        onClick={() => handleSearch(group.base.query, group.base.mustHave)}
+                        className="text-left text-xs text-gray-400 hover:text-gray-200 leading-snug transition-colors line-clamp-2 w-full"
+                        title={group.base.label}
+                      >
+                        {group.base.label}
+                      </button>
+
+                      {/* Refinements clustered below */}
+                      {group.refinements.length > 0 && (
+                        <div className="mt-2 ml-2 pl-3 border-l border-[#30363d] flex flex-col gap-2">
+                          {group.refinements.map((r, ri) => (
+                            <button
+                              key={ri}
+                              onClick={() => handleSearch(r.query, r.mustHave)}
+                              className="text-left text-xs text-gray-600 hover:text-gray-400 leading-snug transition-colors line-clamp-2 w-full"
+                              title={r.label}
+                            >
+                              <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-700 block mb-0.5">↳ refined</span>
+                              {r.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
         </div>
       </div>
@@ -644,6 +897,7 @@ export default function SearchPage() {
                         query={rewrittenQuery || finalQuery}
                         maxRelevanceScore={poolMaxScore}
                         minRelevanceScore={poolMinScore}
+                        filters={activeFilters}
                       />
                     </div>
                   ));
