@@ -89,6 +89,14 @@ const NUDGES = [
   },
 ] as const;
 
+const SEARCH_STATUS_MESSAGES = [
+  'I’m looking across the pool for the strongest fits.',
+  'I’m checking who matches the brief most cleanly.',
+  'I’m narrowing this down into a workable shortlist.',
+  'I’m comparing criteria match with the AI read.',
+  'I’m pulling the most promising profiles to the top.',
+] as const;
+
 const SKIP_PATTERN = /^(no|none|na|n\/a|nah|nope|not applicable|doesn'?t matter|no preference|any|open|skip|-)$/i;
 
 function normalizeNudgeInput(value: string): string {
@@ -313,6 +321,7 @@ export default function SearchPage() {
   const [selectedCriterion, setSelectedCriterion] = useState<number | null>(null);
   const [guidanceExpanded, setGuidanceExpanded] = useState(false);
   const [criteriaExpanded, setCriteriaExpanded] = useState(false);
+  const [loadingStatusIndex, setLoadingStatusIndex] = useState(0);
   const [hasSearched, setHasSearched]       = useState(false);
   const [activeFilters, setActiveFilters]   = useState<Record<string, unknown>>({});
 
@@ -353,6 +362,19 @@ export default function SearchPage() {
   useEffect(() => {
     if (stage === 'refining') refineRef.current?.focus();
   }, [stage]);
+
+  useEffect(() => {
+    if (!loading) {
+      setLoadingStatusIndex(0);
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setLoadingStatusIndex(prev => (prev + 1) % SEARCH_STATUS_MESSAGES.length);
+    }, 1800);
+
+    return () => window.clearInterval(timer);
+  }, [loading]);
 
   useEffect(() => {
     if (stage !== 'confirming' || introTab !== 'type' || jdRequirements.length > 0 || !finalQuery.trim()) return;
@@ -772,7 +794,7 @@ export default function SearchPage() {
 
     return { cards };
   })();
-  const showResultsOnlyLayout = stage === 'results' || (loading && hasSearched);
+  const showResultsOnlyLayout = stage === 'results' || loading;
 
 
   return (
@@ -1432,29 +1454,27 @@ export default function SearchPage() {
       >
         <div className={`${showResultsOnlyLayout ? 'px-10 py-10' : 'px-10 py-14'}`}>
 
-          {/* ── LOADING SKELETON ── */}
+          {/* ── WORKING STATE ── */}
           {loading && (
-            <div className="space-y-3">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="bg-[rgba(255,255,255,0.75)] rounded-[10px] p-5 border border-[#d7e4ea] animate-pulse shadow-[0_14px_28px_rgba(19,33,46,0.04)]">
-                  <div className="flex items-start gap-4">
-                    <div className="flex flex-col items-center gap-1.5">
-                      <div className="w-4 h-2 bg-[#d5e1e6] rounded" />
-                      <div className="w-11 h-11 rounded-[8px] bg-[#d5e1e6] flex-shrink-0" />
-                    </div>
-                    <div className="flex-1 space-y-2.5 pt-1">
-                      <div className="h-4 bg-[#d5e1e6] rounded-full w-1/3" />
-                      <div className="h-3 bg-[#d5e1e6] rounded-full w-2/3" />
-                      <div className="h-3 bg-[#d5e1e6] rounded-full w-1/4" />
-                      <div className="flex gap-1.5 mt-1">
-                        {[...Array(4)].map((_, j) => (
-                          <div key={j} className="h-5 w-16 bg-[#d5e1e6] rounded-full" />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+            <div className="min-h-[68vh] flex items-center justify-center">
+              <div className="w-full max-w-2xl px-6 text-center">
+                <div className="mb-5 flex justify-center">
+                  <AssistantAvatar size="md" className="scale-[0.95]" />
                 </div>
-              ))}
+                <div className="inline-flex items-center gap-2 text-[12px] font-semibold tracking-[0.08em] uppercase text-[#9aaab4]">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#19b37d]/35" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-[#19b37d]" />
+                  </span>
+                  Searching
+                </div>
+                <p className="mt-4 text-[24px] font-semibold tracking-[-0.035em] text-[#233545] leading-[1.35]">
+                  {SEARCH_STATUS_MESSAGES[loadingStatusIndex]}
+                </p>
+                <p className="mt-3 text-[14px] leading-relaxed text-[#7f929f]">
+                  Checking the brief, the weighting, and the strongest profile signals.
+                </p>
+              </div>
             </div>
           )}
 
