@@ -489,8 +489,13 @@ export default function SearchPage() {
     setError(null);
     setFinalQuery(currentQuery);
     setJdRequirements(nextCriteria);
+    const nextImportance: CriterionImportance[] = (
+      importanceOverride && importanceOverride.length > 0
+        ? importanceOverride
+        : nextCriteria.map(() => 'regular' as CriterionImportance)
+    ).slice(0, nextCriteria.length);
     setCriterionImportance(
-      (importanceOverride && importanceOverride.length > 0 ? importanceOverride : nextCriteria.map(() => 'regular')).slice(0, nextCriteria.length)
+      nextImportance
     );
     setJdNewRequirement('');
     setSelectedCriterion(null);
