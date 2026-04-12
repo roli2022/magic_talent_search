@@ -247,7 +247,7 @@ async function rerankCandidates(
       query,
       documents,
       model: 'rerank-2',
-      top_k: 50,
+      top_k: 60,
       return_documents: false,
     }),
   });
@@ -371,7 +371,7 @@ export async function POST(req: NextRequest) {
     const pool = filtered.length >= 10 ? filtered : candidates; // fallback to full pool if filters too aggressive
     console.log(`Pool: ${candidates.length} → filtered: ${filtered.length} → using: ${pool.length}`);
 
-    // Pass 2a — rerank filtered pool → top 50
+    // Pass 2a — rerank filtered pool → top 60
     const reranked = await rerankCandidates(rewritten, pool);
     let results = reranked.map(({ index, relevance_score }) => ({
       ...pool[index],
@@ -384,11 +384,11 @@ export async function POST(req: NextRequest) {
       results = applyMustHaveBoost(results, mustHaveTrimmed);
     }
 
-    // Capture score range across full 50 for normalisation in the UI
+    // Capture score range across full returned set for normalisation in the UI
     const poolMinScore = results[results.length - 1]?.relevanceScore ?? 0;
     const poolMaxScore = results[0]?.relevanceScore ?? 1;
 
-    // Return all 50 + rewritten query + score range + active filters for display
+    // Return all reranked results + rewritten query + score range + active filters for display
     return NextResponse.json({
       results,
       rewrittenQuery: rewritten,
