@@ -311,7 +311,7 @@ export default function SearchPage() {
   const [searchHistory, setSearchHistory]   = useState<SearchHistoryEntry[]>([]);
   const [expandedHistory, setExpandedHistory] = useState<string[]>([]);
   const [selectedCriterion, setSelectedCriterion] = useState<number | null>(null);
-  const [guidanceExpanded, setGuidanceExpanded] = useState(true);
+  const [guidanceExpanded, setGuidanceExpanded] = useState(false);
   const [criteriaExpanded, setCriteriaExpanded] = useState(false);
   const [hasSearched, setHasSearched]       = useState(false);
   const [activeFilters, setActiveFilters]   = useState<Record<string, unknown>>({});
@@ -675,7 +675,7 @@ export default function SearchPage() {
   const filledCriteriaCount = jdRequirements.filter(req => req.trim()).length;
 
   useEffect(() => {
-    setGuidanceExpanded(true);
+    setGuidanceExpanded(false);
     setCriteriaExpanded(false);
   }, [rewrittenQuery, finalQuery]);
 
@@ -1508,7 +1508,7 @@ export default function SearchPage() {
                                   <AssistantAvatar size="sm" className="scale-[0.9]" />
                                   <div className="min-w-0">
                                     <p className="text-[10px] font-semibold uppercase tracking-widest text-[#8fb2c9] mb-1">
-                                      What I&apos;d do next
+                                      Ideas on what I&apos;d do next
                                     </p>
                                     <p className="text-[15px] font-semibold tracking-[-0.03em] text-white leading-snug">
                                       {resultGuidance.cards[0]?.title}
