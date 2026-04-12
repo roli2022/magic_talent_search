@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { buildCriteriaMatches, computeWeightedMatchScore, type CriterionImportance } from '@/lib/criteriaMatching';
 
 interface Experience {
   title: string;
@@ -93,43 +94,6 @@ function buildEnrichedBadges(c: Candidate): EnrichedBadge[] {
   return badges.slice(0, 5);
 }
 
-function buildMatchBadges(c: Candidate, filters: Record<string, unknown>): string[] {
-  if (!c.enriched_at || !filters) return [];
-  const badges: string[] = [];
-
-  if (filters.location_city && c.location_city?.toLowerCase() === (filters.location_city as string).toLowerCase())
-    badges.push(c.location_city!);
-  if (filters.function && c.primary_function === filters.function)
-    badges.push(c.primary_function!);
-  if (filters.seniority && Array.isArray(filters.seniority) && c.seniority && (filters.seniority as string[]).includes(c.seniority))
-    badges.push(c.seniority);
-  if (filters.min_years != null && c.years_experience != null && c.years_experience >= (filters.min_years as number))
-    badges.push(`${c.years_experience}+ yrs`);
-  if (filters.manages_people && c.manages_people)
-    badges.push('Manages teams');
-  if (filters.top_school && c.top_school)
-    badges.push('Top school');
-  if (filters.has_mba && c.has_mba)
-    badges.push('MBA');
-  if (filters.is_founder && c.is_founder)
-    badges.push('Founder');
-  if (filters.has_0_to_1_exp && c.has_0_to_1_exp)
-    badges.push('0-to-1');
-  if (filters.has_startup_exp && c.has_startup_exp)
-    badges.push('Startup exp');
-
-  return badges.slice(0, 5);
-}
-
-const AVATAR_COLORS = [
-  'bg-[#efe2ff] text-[#7c3aed]',
-  'bg-[#dbeafe] text-[#2563eb]',
-  'bg-[#d7f5ea] text-[#0f8e61]',
-  'bg-[#fff0bf] text-[#a16207]',
-  'bg-[#ffe0d1] text-[#de5320]',
-  'bg-[#e0f2fe] text-[#0284c7]',
-];
-
 const LI_PATH = 'M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z';
 
 function LinkedInIcon({ className }: { className?: string }) {
@@ -142,32 +106,22 @@ function LinkedInIcon({ className }: { className?: string }) {
 
 export default function CandidateCard({
   candidate,
-  rank,
   query,
   maxRelevanceScore,
   minRelevanceScore,
-  filters = {},
+  criteria = [],
+  criterionImportance = [],
+  selectedCriterion = null,
 }: {
   candidate: Candidate;
-  rank: number;
   query?: string;
   maxRelevanceScore?: number;
   minRelevanceScore?: number;
-  filters?: Record<string, unknown>;
+  criteria?: string[];
+  criterionImportance?: CriterionImportance[];
+  selectedCriterion?: number | null;
 }) {
   const topExp      = candidate.top_experience?.[0];
-  const avatarColor = AVATAR_COLORS[(candidate.name?.charCodeAt(0) ?? 0) % AVATAR_COLORS.length];
-
-  const baseScore    = candidate.relevanceScore ?? candidate.similarity;
-  const scoreRange   = (maxRelevanceScore ?? 1) - (minRelevanceScore ?? 0);
-  const normStrength = scoreRange > 0 ? Math.min((baseScore - (minRelevanceScore ?? 0)) / scoreRange, 1) : 1;
-  const relStrength  = maxRelevanceScore ? Math.min(baseScore / maxRelevanceScore, 1) : 1;
-
-  const matchLabel =
-    normStrength >= 0.75 ? { text: 'Excellent', cls: 'bg-[#d7f5ea] text-[#0f8e61] border-[#b5e9d6]', borderCls: 'border-[#6ec7a1] hover:border-[#19b37d]', barCls: 'from-[#19b37d] to-[#74d7ad]' } :
-    normStrength >= 0.50 ? { text: 'Strong', cls: 'bg-[#dbeafe] text-[#2563eb] border-[#bfd6ff]', borderCls: 'border-[#bfd6ff] hover:border-[#3b82f6]', barCls: 'from-[#3b82f6] to-[#67a0f8]' } :
-    normStrength >= 0.25 ? { text: 'OK', cls: 'bg-[#fff0bf] text-[#a16207] border-[#f4dc8c]', borderCls: 'border-[#f4dc8c] hover:border-[#ffc83d]', barCls: 'from-[#ffc83d] to-[#ffd86e]' } :
-                           { text: 'Partial', cls: 'bg-[#edf4f7] text-[#557086] border-[#d5e1e6]', borderCls: 'border-[#d5e1e6] hover:border-[#a6bbc7]', barCls: 'from-[#a6bbc7] to-[#d5e1e6]' };
 
   const [summary, setSummary]               = useState('');
   const [sumDone, setSumDone]               = useState(false);
@@ -211,17 +165,21 @@ export default function CandidateCard({
     })();
   }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const matched  = buildMatchBadges(candidate, filters);
+  const criteriaMatches = buildCriteriaMatches(candidate, criteria);
   const enriched = buildEnrichedBadges(candidate);
+  const weightedMatchScore = computeWeightedMatchScore(criteriaMatches, criterionImportance);
+  const matchLabel =
+    weightedMatchScore >= 75 ? { text: `${weightedMatchScore}%`, cls: 'bg-[#d7f5ea] text-[#0f8e61] border-[#b5e9d6]', borderCls: 'border-[#6ec7a1] hover:border-[#19b37d]', barCls: 'from-[#19b37d] to-[#74d7ad]' } :
+    weightedMatchScore >= 50 ? { text: `${weightedMatchScore}%`, cls: 'bg-[#dbeafe] text-[#2563eb] border-[#bfd6ff]', borderCls: 'border-[#bfd6ff] hover:border-[#3b82f6]', barCls: 'from-[#3b82f6] to-[#67a0f8]' } :
+                               { text: `${weightedMatchScore}%`, cls: 'bg-[#fff0bf] text-[#a16207] border-[#f4dc8c]', borderCls: 'border-[#f4dc8c] hover:border-[#ffc83d]', barCls: 'from-[#ffc83d] to-[#ffd86e]' };
 
   return (
     <div className={`rounded-[10px] border transition-all duration-200 overflow-hidden bg-[rgba(255,255,255,0.9)] shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_1px_0_rgba(19,33,46,0.03),0_18px_38px_rgba(19,33,46,0.08),0_34px_70px_rgba(19,33,46,0.04)] ${matchLabel.borderCls}`}>
       <div className="p-[18px]">
         <div className="flex items-start gap-3">
 
-          {/* Rank + Avatar */}
+          {/* Avatar */}
           <div className="flex flex-col items-center gap-1.5 flex-shrink-0 w-11">
-            <span className="text-[10px] font-semibold text-[#8698a4]">#{rank}</span>
             <a href={candidate.url} target="_blank" rel="noopener noreferrer">
               {candidate.image_url ? (
                 <img
@@ -231,8 +189,10 @@ export default function CandidateCard({
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                 />
               ) : (
-                <div className={`w-11 h-11 rounded-[8px] ${avatarColor} flex items-center justify-center font-bold text-sm ring-1 ring-[#d5e1e6]`}>
-                  {(candidate.name || '?').charAt(0).toUpperCase()}
+                <div className="w-11 h-11 rounded-[8px] bg-[#edf4f7] text-[#7c8e99] flex items-center justify-center ring-1 ring-[#d5e1e6]">
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden="true">
+                    <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-3.33 0-6 1.79-6 4v1h12v-1c0-2.21-2.67-4-6-4z" />
+                  </svg>
                 </div>
               )}
             </a>
@@ -256,7 +216,7 @@ export default function CandidateCard({
                   <span className="text-[#8698a4] text-[11px] ml-2">{candidate.location}</span>
                 )}
               </div>
-              <div className={`flex-shrink-0 text-[11px] font-extrabold px-3 py-2 rounded-full border ${matchLabel.cls}`}>
+              <div className={`flex-shrink-0 text-[16px] font-black px-4 py-2 rounded-[8px] border tracking-[-0.03em] leading-none ${matchLabel.cls}`}>
                 {matchLabel.text}
               </div>
             </div>
@@ -278,7 +238,7 @@ export default function CandidateCard({
               {sumLoading && !summary && (
                 <div className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-[#3b82f6] animate-pulse" />
-                  <span className="text-[11px] text-[#8698a4]">Analysing fit…</span>
+                  <span className="text-[11px] text-[#8698a4]">I&apos;m reading the fit…</span>
                 </div>
               )}
               {summary && (
@@ -288,26 +248,39 @@ export default function CandidateCard({
               )}
             </div>
 
-            {/* Signals + Actions — always show actions, signals only when present */}
+            {/* Direct match + AI signals + Actions */}
             <div className="mt-3 pt-3 border-t border-[#e3edf1] flex items-start justify-between gap-3">
 
               {/* Signals column */}
               <div className="flex flex-col gap-2 flex-1 min-w-0">
-                {matched.length > 0 && (
+                {criteriaMatches.length > 0 && (
                   <div className="flex items-start gap-2">
-                    <span className="text-[10px] font-bold text-[#0f8e61] mt-0.5 w-16 flex-shrink-0 uppercase tracking-[0.08em]">Matched</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {matched.map((label, i) => (
-                        <span key={i} className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border bg-[#d7f5ea] text-[#0f8e61] border-[#b5e9d6]">
-                          ✓ {label}
-                        </span>
-                      ))}
+                    <span className="text-[10px] font-bold text-[#163a59] mt-0.5 w-[110px] flex-shrink-0 uppercase tracking-[0.08em] whitespace-nowrap">Criteria Match</span>
+                    <div className="flex flex-wrap gap-1.5 min-w-0 flex-1">
+                      {criteriaMatches.map((criterion, i) => {
+                        const tone =
+                          criterion.status === 'match'
+                            ? 'bg-[#d7f5ea] text-[#0f8e61] border-[#b5e9d6]'
+                            : criterion.status === 'partial'
+                              ? 'bg-[#fff0bf] text-[#af7c05] border-[#ffe08b]'
+                              : 'bg-[#ffe3e3] text-[#d9485f] border-[#ffc5cc]';
+                        const isSelected = selectedCriterion === i;
+                        return (
+                          <span
+                            key={i}
+                            title={`${criterion.label}: ${criterion.reason}`}
+                            className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border font-semibold transition-all ${tone} ${isSelected ? 'ring-2 ring-[#163a59] ring-offset-1 scale-[1.03]' : ''}`}
+                          >
+                            C{i + 1}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
                 {enriched.length > 0 && (
                   <div className="flex items-start gap-2">
-                    <span className="text-[10px] font-bold text-[#163a59] mt-0.5 w-16 flex-shrink-0 uppercase tracking-[0.08em]">Signals</span>
+                    <span className="text-[10px] font-bold text-[#163a59] mt-0.5 w-16 flex-shrink-0 uppercase tracking-[0.08em] whitespace-nowrap">AI signals</span>
                     <div className="flex flex-wrap gap-1.5">
                       {enriched.map((badge, i) => (
                         <span key={i} title={badge.title} className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border ${badge.cls}`}>
@@ -369,7 +342,7 @@ export default function CandidateCard({
       <div className="h-[3px] w-full bg-[#e8eef1]">
         <div
           className={`h-full bg-gradient-to-r transition-all duration-500 ${matchLabel.barCls}`}
-          style={{ width: `${Math.round(relStrength * 100)}%` }}
+          style={{ width: `${weightedMatchScore}%` }}
         />
       </div>
     </div>

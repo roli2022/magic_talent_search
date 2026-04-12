@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import CandidateCard from '@/components/CandidateCard';
+import { buildCriteriaMatches, computeWeightedMatchScore, type CriterionImportance } from '@/lib/criteriaMatching';
 
 interface Experience {
   title: string;
@@ -108,7 +109,149 @@ function buildComposed(main: string, values: Record<string, string>): string {
   return `${base}\n\nMust-have: ${mustHaveRaw}. Candidates who do not meet this should not be considered.`;
 }
 
+function buildCriteriaFromQuery(query: string): string[] {
+  const normalized = query.replace(/\s+/g, ' ').trim();
+  if (!normalized) return [];
+
+  const parts = normalized
+    .replace(/\n+/g, ' ')
+    .split(/(?<=[.?!])\s+|(?=Must-have:)/)
+    .map(part => part.trim())
+    .filter(Boolean);
+
+  const cleanPart = (part: string) =>
+    part
+      .trim()
+      .replace(/\.$/, '')
+      .replace(/^ideally\s+/i, 'Ideally ')
+      .replace(/^who has\s+/i, 'Has ')
+      .replace(/^who can\s+/i, 'Can ')
+      .replace(/^who is\s+/i, 'Is ')
+      .replace(/^with\s+(\d+\+?\s+years?.*)/i, 'Has $1')
+      .replace(/^background in\s+/i, 'Background in ')
+      .replace(/^experience in\s+/i, 'Experience in ');
+
+  const criteria = parts.flatMap((part) => {
+    if (/^(Based in|Also strong in|Education:|Must-have:|Non-negotiable requirement:)/i.test(part)) {
+      return [cleanPart(part)];
+    }
+
+    const clauseParts = part
+      .split(/,\s+|\s+(?=who\s+(?:has|can|is)\b)/i)
+      .map(cleanPart)
+      .filter(Boolean);
+
+    return clauseParts.length > 0 ? clauseParts : [cleanPart(part)];
+  });
+
+  return criteria.reduce<string[]>((acc, part) => {
+    if (!part) return acc;
+    if (part.startsWith('Candidates who do not meet this should not be considered') && acc.length > 0) {
+      acc[acc.length - 1] = `${acc[acc.length - 1]}. ${part}`;
+      return acc;
+    }
+    acc.push(part);
+    return acc;
+  }, []);
+}
+
+function buildCriteriaFromDescribeRoleInputs(
+  mainQuery: string,
+  fields: Record<string, string>,
+  fallbackQuery: string
+): string[] {
+  const criteria: string[] = [];
+  const seen = new Set<string>();
+
+  const pushUnique = (value: string) => {
+    const cleaned = value.trim().replace(/\s+/g, ' ').replace(/\.$/, '');
+    if (!cleaned) return;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    criteria.push(cleaned);
+  };
+
+  const normalizedMain = mainQuery.trim().replace(/\s+/g, ' ');
+  if (normalizedMain) {
+    const roleFirst = normalizedMain
+      .split(/,\s+|\s+\band\b\s+|\s+with\s+(?=\d+\+?\s+years?|\d+\s+years?)/i)[0]
+      .trim();
+    pushUnique(roleFirst || normalizedMain);
+
+    normalizedMain
+      .split(/,\s+|\s+\band\b\s+/i)
+      .slice(1)
+      .map(part => part.trim())
+      .filter(part => {
+        const lower = part.toLowerCase();
+        if (!lower) return false;
+        if (fields.experience?.trim() && (lower.includes('year') || lower.includes(fields.experience.trim().toLowerCase()))) return false;
+        if (fields.location?.trim() && lower.includes(fields.location.trim().toLowerCase())) return false;
+        if (fields.education?.trim() && lower.includes(fields.education.trim().toLowerCase())) return false;
+        if (fields.skills?.trim() && lower.includes(fields.skills.trim().toLowerCase())) return false;
+        if (fields.musthave?.trim() && lower.includes(fields.musthave.trim().toLowerCase())) return false;
+        return true;
+      })
+      .forEach(pushUnique);
+  }
+
+  if (fields.experience?.trim()) {
+    const experience = fields.experience.trim();
+    pushUnique(/^\d+\+?\s+years?/i.test(experience) ? `Has ${experience}` : experience);
+  }
+  if (fields.location?.trim()) pushUnique(`Based in ${fields.location.trim()}`);
+  if (fields.skills?.trim()) pushUnique(`Also strong in ${fields.skills.trim()}`);
+  if (fields.education?.trim()) pushUnique(`Education: ${fields.education.trim()}`);
+  if (fields.musthave?.trim()) {
+    pushUnique(`Must-have: ${fields.musthave.trim()}`);
+  }
+
+  if (criteria.length <= 1 && fallbackQuery.trim()) {
+    buildCriteriaFromQuery(fallbackQuery).forEach(pushUnique);
+  }
+
+  return criteria;
+}
+
+function AssistantAvatar({
+  size = 'md',
+  className = '',
+}: {
+  size?: 'sm' | 'md' | 'lg';
+  className?: string;
+}) {
+  const sizeClass =
+    size === 'lg'
+      ? 'w-16 h-16 rounded-[18px] text-[30px]'
+      : size === 'sm'
+        ? 'w-10 h-10 rounded-[12px] text-[20px]'
+        : 'w-12 h-12 rounded-[14px] text-[24px]';
+
+  return (
+    <div className={`relative flex-shrink-0 ${className}`}>
+      <div
+        className={`${sizeClass} bg-gradient-to-br from-[#ffd66b] via-[#ff8e42] to-[#1f7cf0] flex items-center justify-center shadow-[0_14px_34px_rgba(19,33,46,0.12)] ring-1 ring-white/70`}
+      >
+        <span className="translate-y-[1px]">🧙‍♀️</span>
+      </div>
+      <div className="absolute -right-1 -bottom-1 w-5 h-5 rounded-full bg-white border border-[#d7e4ea] shadow-[0_8px_16px_rgba(19,33,46,0.08)] flex items-center justify-center text-[11px]">
+        ✨
+      </div>
+    </div>
+  );
+}
+
 export default function SearchPage() {
+  const MAX_CRITERIA = 8;
+  type SearchHistoryEntry = {
+    label: string;
+    query: string;
+    mustHave: string;
+    type: 'new' | 'refined';
+    criteria: string[];
+    importance: CriterionImportance[];
+  };
   const [stage, setStage]                   = useState<Stage>('intro');
   const [mainQuery, setMainQuery]           = useState('');
   const [activeNudge, setActiveNudge]       = useState(0);
@@ -125,20 +268,24 @@ export default function SearchPage() {
   const PAGE_SIZE = 10;
   const [loading, setLoading]               = useState(false);
   const [error, setError]                   = useState<string | null>(null);
-  const [searchHistory, setSearchHistory]   = useState<{ label: string; query: string; mustHave: string; type: 'new' | 'refined' }[]>([]);
+  const [searchHistory, setSearchHistory]   = useState<SearchHistoryEntry[]>([]);
+  const [expandedHistory, setExpandedHistory] = useState<string[]>([]);
+  const [selectedCriterion, setSelectedCriterion] = useState<number | null>(null);
   const [hasSearched, setHasSearched]       = useState(false);
   const [activeFilters, setActiveFilters]   = useState<Record<string, unknown>>({});
 
   const [refinementInput, setRefinementInput] = useState('');
 
   // JD upload state
-  const [introTab, setIntroTab]             = useState<IntroTab>('type');
+  const [introTab, setIntroTab]             = useState<IntroTab>('jd');
   const [jdFile, setJdFile]                 = useState<File | null>(null);
   const [jdDragging, setJdDragging]         = useState(false);
   const [jdParsing, setJdParsing]           = useState(false);
   const [jdRequirements, setJdRequirements] = useState<string[]>([]);
   const [jdError, setJdError]               = useState<string | null>(null);
   const [jdRebuilding, setJdRebuilding]     = useState(false);
+  const [jdNewRequirement, setJdNewRequirement] = useState('');
+  const [criterionImportance, setCriterionImportance] = useState<CriterionImportance[]>([]);
   const jdInputRef = useRef<HTMLInputElement>(null);
 
   const nudgeInputRef  = useRef<HTMLInputElement>(null);
@@ -163,6 +310,18 @@ export default function SearchPage() {
   useEffect(() => {
     if (stage === 'refining') refineRef.current?.focus();
   }, [stage]);
+
+  useEffect(() => {
+    if (stage !== 'confirming' || introTab !== 'type' || jdRequirements.length > 0 || !finalQuery.trim()) return;
+    const describeRoleCriteria = buildCriteriaFromDescribeRoleInputs(
+      mainQuery,
+      { ...detectedFields, ...values },
+      finalQuery
+    ).slice(0, MAX_CRITERIA);
+    setJdRequirements(describeRoleCriteria);
+    setCriterionImportance(describeRoleCriteria.map(() => 'regular'));
+    setJdNewRequirement('');
+  }, [stage, introTab, jdRequirements.length, finalQuery, mainQuery, detectedFields, values, MAX_CRITERIA]);
 
   async function handleRefine(e: React.FormEvent) {
     e.preventDefault();
@@ -193,9 +352,17 @@ export default function SearchPage() {
       setRefinementInput('');
       rightPanelRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       setSearchHistory(prev => {
-        const entry = { label: rq, query: rq, mustHave: '', type: 'refined' as const };
+        const criteria = buildCriteriaFromQuery(rq).slice(0, MAX_CRITERIA);
+        const entry = {
+          label: rq,
+          query: rq,
+          mustHave: '',
+          type: 'refined' as const,
+          criteria,
+          importance: criteria.map(() => 'regular' as CriterionImportance),
+        };
         const deduped = prev.filter(h => h.query !== rq);
-        return [entry, ...deduped].slice(0, 5);
+        return [entry, ...deduped].slice(0, 3);
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
@@ -207,6 +374,9 @@ export default function SearchPage() {
   async function handleIntroSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!mainQuery.trim()) return;
+    setJdRequirements([]);
+    setCriterionImportance([]);
+    setJdNewRequirement('');
     setAnalyzing(true);
     try {
       const res = await fetch('/api/analyze', {
@@ -250,7 +420,9 @@ export default function SearchPage() {
       const res = await fetch('/api/parse-jd', { method: 'POST', body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to parse JD');
-      setJdRequirements(data.requirements || []);
+      const requirements = data.requirements || [];
+      setJdRequirements(requirements);
+      setCriterionImportance(requirements.map(() => 'regular'));
       setFinalQuery(data.query || '');
       setStage('confirming');
     } catch (err) {
@@ -260,24 +432,87 @@ export default function SearchPage() {
     }
   }
 
+  async function rebuildQueryFromRequirements(requirements: string[]) {
+    const cleaned = requirements.map(r => r.trim()).filter(Boolean);
+    if (cleaned.length === 0) return '';
+
+    const res = await fetch('/api/rebuild-query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requirements: cleaned }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to rebuild query');
+    return data.query || '';
+  }
+
   async function handleDeleteRequirement(index: number) {
     const remaining = jdRequirements.filter((_, i) => i !== index);
     setJdRequirements(remaining);
+    setCriterionImportance(prev => prev.filter((_, i) => i !== index));
     if (remaining.length === 0) {
       setFinalQuery('');
       return;
     }
     setJdRebuilding(true);
     try {
-      const res = await fetch('/api/rebuild-query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requirements: remaining }),
-      });
-      const data = await res.json();
-      if (data.query) setFinalQuery(data.query);
+      const query = await rebuildQueryFromRequirements(remaining);
+      setFinalQuery(query);
     } catch { /* keep existing query on failure */ }
     finally { setJdRebuilding(false); }
+  }
+
+  function handleUpdateRequirement(index: number, value: string) {
+    setJdRequirements(prev => prev.map((req, i) => (i === index ? value : req)));
+  }
+
+  function handleUpdateImportance(index: number, value: CriterionImportance) {
+    setCriterionImportance(prev => prev.map((importance, i) => (i === index ? value : importance)));
+  }
+
+  function handleAddRequirement() {
+    const next = jdNewRequirement.trim();
+    if (!next) return;
+    if (jdRequirements.length >= MAX_CRITERIA) return;
+    setJdRequirements(prev => [...prev, next]);
+    setCriterionImportance(prev => [...prev, 'regular']);
+    setJdNewRequirement('');
+  }
+
+  function openCriteriaConfirmation(query: string, criteriaOverride?: string[], importanceOverride?: CriterionImportance[]) {
+    const currentQuery = query.trim();
+    const nextCriteria = (criteriaOverride && criteriaOverride.length > 0
+      ? criteriaOverride
+      : buildCriteriaFromQuery(currentQuery)
+    ).slice(0, MAX_CRITERIA);
+    if (!currentQuery && nextCriteria.length === 0) return;
+    setError(null);
+    setFinalQuery(currentQuery);
+    setJdRequirements(nextCriteria);
+    setCriterionImportance(
+      (importanceOverride && importanceOverride.length > 0 ? importanceOverride : nextCriteria.map(() => 'regular')).slice(0, nextCriteria.length)
+    );
+    setJdNewRequirement('');
+    setSelectedCriterion(null);
+    setStage('confirming');
+  }
+
+  function buildHistoryCriteria(query: string): string[] {
+    if (jdRequirements.length > 0) return jdRequirements.slice(0, MAX_CRITERIA);
+    if (introTab === 'type') {
+      return buildCriteriaFromDescribeRoleInputs(mainQuery, { ...detectedFields, ...values }, query).slice(0, MAX_CRITERIA);
+    }
+    return buildCriteriaFromQuery(query).slice(0, MAX_CRITERIA);
+  }
+
+  function summarizeCriteria(criteria: string[]) {
+    if (criteria.length === 0) return 'No saved criteria';
+    if (criteria.length === 1) return criteria[0];
+    return `${criteria[0]} + ${criteria.length - 1} more`;
+  }
+
+  function handleRefineSearch() {
+    openCriteriaConfirmation(rewrittenQuery || finalQuery, jdRequirements, criterionImportance);
   }
 
   function advanceNudge(inputValue: string) {
@@ -298,13 +533,24 @@ export default function SearchPage() {
   }
 
   async function handleSearch(queryOverride?: string, mustHaveOverride?: string) {
-    const q  = queryOverride  ?? finalQuery;
+    let q  = queryOverride  ?? finalQuery;
     const mh = mustHaveOverride ?? (values.musthave || detectedFields.musthave || '');
-    if (!q.trim()) return;
     setLoading(true);
     setError(null);
     if (queryOverride) { setFinalQuery(queryOverride); setStage('confirming'); }
     try {
+      if (!queryOverride && jdRequirements.length > 0) {
+        const cleanedRequirements = jdRequirements.map(r => r.trim()).filter(Boolean);
+        if (!cleanedRequirements.length) return;
+        setJdRebuilding(true);
+        try {
+          q = await rebuildQueryFromRequirements(cleanedRequirements);
+          setFinalQuery(q);
+        } finally {
+          setJdRebuilding(false);
+        }
+      }
+      if (!q.trim()) return;
       const res = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -323,9 +569,17 @@ export default function SearchPage() {
       setStage('results');
       // Record in history (dedup, keep last 5)
       setSearchHistory(prev => {
-        const entry = { label: rq, query: q, mustHave: mh, type: 'new' as const };
+        const criteria = buildHistoryCriteria(q);
+        const entry = {
+          label: rq,
+          query: q,
+          mustHave: mh,
+          type: 'new' as const,
+          criteria,
+          importance: criterionImportance.slice(0, criteria.length),
+        };
         const deduped = prev.filter(h => h.query !== q);
-        return [entry, ...deduped].slice(0, 5);
+        return [entry, ...deduped].slice(0, 3);
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
@@ -351,18 +605,71 @@ export default function SearchPage() {
     setJdFile(null);
     setJdRequirements([]);
     setJdError(null);
+    setJdNewRequirement('');
+    setCriterionImportance([]);
+    setSelectedCriterion(null);
   }
 
   const composed = buildComposed(mainQuery, { ...values, [activeNudges[activeNudge]?.key]: nudgeInput });
   const nudge    = activeNudges[activeNudge];
+  const resultsCriteria = (() => {
+    if (jdRequirements.length > 0) return jdRequirements;
+    if (introTab === 'type') {
+      return buildCriteriaFromDescribeRoleInputs(mainQuery, { ...detectedFields, ...values }, rewrittenQuery || finalQuery).slice(0, MAX_CRITERIA);
+    }
+    return buildCriteriaFromQuery(rewrittenQuery || finalQuery).slice(0, MAX_CRITERIA);
+  })();
+  const effectiveImportance = resultsCriteria.map((_, i) => criterionImportance[i] ?? 'regular');
+  const filledCriteriaCount = jdRequirements.filter(req => req.trim()).length;
 
   // Filter out results below 30% relative strength within the pool
   const scoreRange = poolMaxScore - poolMinScore;
-  const visibleResults = results.filter(c => {
-    const base = c.relevanceScore ?? c.similarity;
-    const norm = scoreRange > 0 ? Math.min((base - poolMinScore) / scoreRange, 1) : 1;
-    return norm >= 0.30;
-  });
+  const visibleResults = results
+    .filter(c => {
+      const base = c.relevanceScore ?? c.similarity;
+      const norm = scoreRange > 0 ? Math.min((base - poolMinScore) / scoreRange, 1) : 1;
+      return norm >= 0.30;
+    })
+    .sort((a, b) => {
+      const aScore = computeWeightedMatchScore(buildCriteriaMatches(a, resultsCriteria), effectiveImportance);
+      const bScore = computeWeightedMatchScore(buildCriteriaMatches(b, resultsCriteria), effectiveImportance);
+      if (bScore !== aScore) return bScore - aScore;
+      return (b.relevanceScore ?? b.similarity) - (a.relevanceScore ?? a.similarity);
+    });
+  const resultGuidance = (() => {
+    if (resultsCriteria.length === 0 || visibleResults.length === 0) return null;
+    const sample = visibleResults.slice(0, Math.min(8, visibleResults.length));
+    const stats = resultsCriteria.map((criterion, index) => {
+      const matches = sample.map(candidate => buildCriteriaMatches(candidate, [criterion])[0]);
+      const avg = matches.reduce((sum, match) => sum + (match.status === 'match' ? 1 : match.status === 'partial' ? 0.5 : 0), 0) / sample.length;
+      return { index, criterion, importance: effectiveImportance[index], avg };
+    });
+
+    const weakHigh = [...stats]
+      .filter(item => item.importance === 'high')
+      .sort((a, b) => a.avg - b.avg)[0];
+    const strongest = [...stats].sort((a, b) => b.avg - a.avg)[0];
+    const weakest = [...stats].sort((a, b) => a.avg - b.avg)[0];
+
+    const headline =
+      weakHigh && weakHigh.avg < 0.45
+        ? `High-priority ${`C${weakHigh.index + 1}`} is filtering hard across the current pool.`
+        : weakest && weakest.avg < 0.3
+          ? `${`C${weakest.index + 1}`} looks over-constraining for this market.`
+          : `The current brief is landing best on ${`C${strongest.index + 1}`}.`;
+
+    const bullets = [
+      weakHigh && weakHigh.avg < 0.45
+        ? `Consider relaxing or clarifying C${weakHigh.index + 1} before widening the search.`
+        : `Keep C${strongest.index + 1} anchored — it is showing the clearest signal across top candidates.`,
+      strongest && weakest && strongest.index !== weakest.index
+        ? `Top candidates are consistently stronger on C${strongest.index + 1} than on C${weakest.index + 1}.`
+        : `Use criterion weights to tell the system what should matter most in ranking.`,
+    ];
+
+    return { headline, bullets };
+  })();
+  const showResultsOnlyLayout = stage === 'results' || (loading && hasSearched);
 
 
   return (
@@ -377,7 +684,9 @@ export default function SearchPage() {
       <div
         className={`
           flex-shrink-0 transition-all duration-500 ease-in-out
-          ${isSplit
+          ${showResultsOnlyLayout
+            ? 'w-0 overflow-hidden opacity-0 pointer-events-none'
+            : isSplit
             ? 'w-2/5 border-r border-[#d7e4ea] overflow-y-auto flex flex-col justify-center relative z-10'
             : 'w-full h-full flex items-center justify-center overflow-y-auto relative z-10'
           }
@@ -401,30 +710,17 @@ export default function SearchPage() {
 
               {/* Avatar + title */}
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-[14px] bg-gradient-to-br from-[#ffc83d] via-[#ff6b2c] to-[#3b82f6] flex items-center justify-center text-2xl flex-shrink-0 shadow-[0_14px_34px_rgba(19,33,46,0.12)] ring-1 ring-white/70">
-                  🧙‍♀️
-                </div>
+                <AssistantAvatar size="lg" />
                 <div>
-                  <p className="text-[#587082] text-sm leading-none mb-1">Hi there! I'm your</p>
-                  <h1 className="text-[30px] font-black tracking-[-0.05em] text-[#13212e] leading-tight">
-                    magical talent sourcer <span className="text-[#ff6b2c]">✨</span>
+                  <p className="text-[#587082] text-sm leading-none mb-1">Hi, I&apos;m your</p>
+                  <h1 className="text-[28px] font-black tracking-[-0.05em] text-[#13212e] leading-tight whitespace-nowrap">
+                    talent search partner, with a little magic <span className="text-[#ff6b2c]">✨</span>
                   </h1>
                 </div>
               </div>
 
               {/* Tab toggle */}
               <div className="flex gap-1 bg-[rgba(255,255,255,0.74)] border border-[#d7e4ea] rounded-[10px] p-1 self-start shadow-[0_8px_22px_rgba(19,33,46,0.05)]">
-                <button
-                  type="button"
-                  onClick={() => setIntroTab('type')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
-                    introTab === 'type'
-                      ? 'bg-[#163a59] text-white'
-                      : 'text-[#587082] hover:text-[#13212e]'
-                  }`}
-                >
-                  Describe role
-                </button>
                 <button
                   type="button"
                   onClick={() => { setIntroTab('jd'); setJdError(null); }}
@@ -436,13 +732,24 @@ export default function SearchPage() {
                 >
                   Upload JD
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setIntroTab('type')}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+                    introTab === 'type'
+                      ? 'bg-[#163a59] text-white'
+                      : 'text-[#587082] hover:text-[#13212e]'
+                  }`}
+                >
+                  Describe role
+                </button>
               </div>
 
               {/* ── Tab: Describe role ── */}
               {introTab === 'type' && (
                 <form onSubmit={handleIntroSubmit} className="flex flex-col gap-3">
                   <label className="block text-sm font-medium text-[#587082]">
-                    Tell me who you need — I'll find your best matches.
+                    Tell me the role. I&apos;ll shape the search.
                   </label>
                   <textarea
                     value={mainQuery}
@@ -464,7 +771,7 @@ export default function SearchPage() {
                       disabled={!mainQuery.trim() || analyzing}
                       className="bg-[#163a59] text-white px-6 py-2.5 rounded-[8px] text-sm font-bold hover:bg-[#0f2c44] disabled:opacity-30 transition-colors"
                     >
-                      {analyzing ? 'Thinking…' : '🔍 Find'}
+                      {analyzing ? 'Thinking…' : '🔍 Start search'}
                     </button>
                   </div>
                 </form>
@@ -474,7 +781,7 @@ export default function SearchPage() {
               {introTab === 'jd' && (
                 <div className="flex flex-col gap-4">
                   <p className="text-sm text-[#587082]">
-                    Upload a job description PDF — I'll extract the key requirements and search for matching candidates.
+                    Upload the JD. I&apos;ll pull out the main criteria and search on that.
                   </p>
 
                   {/* Drop zone */}
@@ -512,18 +819,18 @@ export default function SearchPage() {
                     {jdParsing ? (
                       <>
                         <div className="w-8 h-8 rounded-full border-2 border-[#3b82f6] border-t-transparent animate-spin" />
-                        <p className="text-sm text-[#163a59] font-medium">Reading job description…</p>
+                        <p className="text-sm text-[#163a59] font-medium">📄 I&apos;m reading the JD…</p>
                       </>
                     ) : jdFile && !jdError ? (
                       <>
                         <span className="text-3xl">📄</span>
                         <p className="text-sm text-[#163a59] font-medium text-center">{jdFile.name}</p>
-                        <p className="text-xs text-[#8698a4]">Click to replace</p>
+                        <p className="text-xs text-[#8698a4]">Click to replace it</p>
                       </>
                     ) : (
                       <>
                         <span className="text-3xl text-[#8698a4]">📂</span>
-                        <p className="text-sm text-[#587082] font-medium">Drop PDF here or click to browse</p>
+                        <p className="text-sm text-[#587082] font-medium">Drop the PDF here or click to upload</p>
                         <p className="text-xs text-[#8698a4]">PDF only · max 10 MB</p>
                       </>
                     )}
@@ -551,7 +858,7 @@ export default function SearchPage() {
 
               <div className="bg-[rgba(255,255,255,0.82)] border border-[#d7e4ea] rounded-[10px] px-5 py-4 mb-8 shadow-[0_14px_28px_rgba(19,33,46,0.05)]">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-[#3b82f6] mb-1.5">
-                  Your search so far
+                  What I have so far
                 </p>
                 <p className="text-[#13212e] text-base leading-relaxed font-medium whitespace-pre-wrap">{composed}</p>
               </div>
@@ -611,28 +918,48 @@ export default function SearchPage() {
                 ← Start over
               </button>
 
-              <p className="text-2xl font-black tracking-[-0.04em] text-[#13212e] mb-1">Almost there.</p>
-              <p className="text-[#587082] text-sm mb-6">
-                {jdRequirements.length > 0
-                  ? 'Remove any requirements that don\'t apply, then search.'
-                  : 'Here\'s what I\'ll search for. Feel free to reword or add anything.'}
+              <p className="text-2xl font-black tracking-[-0.04em] text-[#13212e] mb-6">
+                Here&apos;s how I&apos;m defining a great candidate.
               </p>
 
-              {/* JD requirements list */}
+              {/* Criteria list */}
               {jdRequirements.length > 0 && (
-                <div className="flex flex-col gap-1.5 mb-5">
+                <div className="flex flex-col gap-2.5 mb-5">
                   <p className="text-[11px] font-semibold uppercase tracking-widest text-[#8698a4] mb-1">
-                    Key requirements
+                    Edit, remove, or add criteria, then 🔍
                   </p>
                   {jdRequirements.map((req, i) => (
                     <div
                       key={i}
                       className="flex items-center gap-3 bg-[rgba(255,255,255,0.82)] border border-[#d7e4ea] rounded-[10px] px-4 py-2.5 group"
                     >
-                      <span className="text-[11px] font-medium text-[#8698a4] w-4 flex-shrink-0 tabular-nums">
-                        {i + 1}
+                      <span className="text-[11px] font-semibold text-[#8698a4] w-6 flex-shrink-0 tabular-nums">
+                        C{i + 1}
                       </span>
-                      <span className="text-sm text-[#587082] flex-1">{req}</span>
+                      <input
+                        type="text"
+                        value={req}
+                        onChange={(e) => handleUpdateRequirement(i, e.target.value)}
+                        className="flex-1 bg-transparent text-sm text-[#13212e] placeholder:text-[#8698a4] focus:outline-none"
+                      />
+                      <div className="flex items-center p-0.5 rounded-full bg-[#edf4f7] border border-[#d7e4ea] flex-shrink-0">
+                        {(['regular', 'high'] as CriterionImportance[]).map((level) => (
+                          <button
+                            key={level}
+                            type="button"
+                            onClick={() => handleUpdateImportance(i, level)}
+                            className={`px-3 py-1 rounded-full text-[10px] font-semibold uppercase transition-colors ${
+                              (criterionImportance[i] ?? 'regular') === level
+                                ? level === 'high'
+                                  ? 'bg-[#146a55] text-white shadow-[0_6px_14px_rgba(20,106,85,0.22)]'
+                                  : 'bg-white text-[#557086] shadow-[0_4px_10px_rgba(19,33,46,0.08)]'
+                                : 'text-[#8698a4] hover:text-[#13212e]'
+                            }`}
+                          >
+                            {level === 'high' ? '💪' : 'Std'}
+                          </button>
+                        ))}
+                      </div>
                       <button
                         type="button"
                         onClick={() => handleDeleteRequirement(i)}
@@ -643,38 +970,87 @@ export default function SearchPage() {
                       </button>
                     </div>
                   ))}
+
+                  {jdRequirements.length < MAX_CRITERIA ? (
+                    <div className="flex items-center gap-3 bg-[rgba(255,255,255,0.7)] border border-dashed border-[#d7e4ea] rounded-[10px] px-4 py-2.5">
+                      <span className="text-[11px] font-semibold text-[#8698a4] w-6 flex-shrink-0">
+                        C{jdRequirements.length + 1}
+                      </span>
+                      <input
+                        type="text"
+                        value={jdNewRequirement}
+                        onChange={(e) => setJdNewRequirement(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddRequirement();
+                          }
+                        }}
+                        placeholder="Add one more criterion"
+                        className="flex-1 bg-transparent text-sm text-[#13212e] placeholder:text-[#8698a4] focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddRequirement}
+                        disabled={!jdNewRequirement.trim()}
+                        className="px-3 py-1.5 rounded-[8px] text-xs font-bold text-white bg-[#163a59] hover:bg-[#0f2c44] disabled:opacity-40 transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-[#0f8e61]">
+                      Max criteria reached
+                    </p>
+                  )}
                 </div>
               )}
 
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-[#8698a4]">
-                  Search query — edit as needed
-                </p>
-                {jdRebuilding && (
-                  <span className="text-[11px] text-[#8698a4] flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#3b82f6] animate-pulse inline-block" />
-                    Updating…
-                  </span>
-                )}
-              </div>
-              <textarea
-                ref={confirmRef}
-                value={finalQuery}
-                onChange={e => setFinalQuery(e.target.value)}
-                rows={5}
-                className="w-full bg-[rgba(255,255,255,0.84)] border border-[#cad9df] rounded-[10px] px-5 py-4 text-base text-[#13212e] leading-relaxed focus:outline-none focus:border-[#3b82f6] resize-none mb-5 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_14px_28px_rgba(19,33,46,0.05)]"
-              />
+              {jdRequirements.length === 0 && (
+                <>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-[#8698a4]">
+                      Search I&apos;ll run
+                    </p>
+                    {jdRebuilding && (
+                      <span className="text-[11px] text-[#8698a4] flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#3b82f6] animate-pulse inline-block" />
+                        Updating…
+                      </span>
+                    )}
+                  </div>
+                  <textarea
+                    ref={confirmRef}
+                    value={finalQuery}
+                    onChange={e => setFinalQuery(e.target.value)}
+                    rows={5}
+                    className="w-full bg-[rgba(255,255,255,0.84)] border border-[#cad9df] rounded-[10px] px-5 py-4 text-base text-[#13212e] leading-relaxed focus:outline-none focus:border-[#3b82f6] resize-none mb-5 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_14px_28px_rgba(19,33,46,0.05)]"
+                  />
+                </>
+              )}
+
+              {jdRequirements.length > 0 && jdRebuilding && (
+                <div className="mb-5 text-[11px] text-[#8698a4] flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#3b82f6] animate-pulse inline-block" />
+                  I&apos;m building the search in the background…
+                </div>
+              )}
 
               {error && (
                 <div className="bg-[#ffe3e3] border border-[#ffc5cc] text-[#d9485f] rounded-[10px] px-4 py-3 text-sm mb-5">
                   {error}
                 </div>
               )}
+              {jdRequirements.length > 0 && filledCriteriaCount < 3 && (
+                <div className="bg-[#fff0bf] border border-[#ffe08b] text-[#a16207] rounded-[10px] px-4 py-3 text-sm mb-5">
+                  Add at least 3 criteria so I can run a solid search.
+                </div>
+              )}
 
               <div className="flex justify-end">
                 <button
                   onClick={() => handleSearch()}
-                  disabled={loading || !finalQuery.trim()}
+                  disabled={loading || (jdRequirements.length > 0 ? filledCriteriaCount < 3 : !finalQuery.trim())}
                   className="bg-[#163a59] text-white px-8 py-3 rounded-[8px] text-sm font-bold hover:bg-[#0f2c44] disabled:opacity-40 transition-colors"
                 >
                   {loading ? 'Searching…' : '🔍 Find candidates'}
@@ -688,38 +1064,48 @@ export default function SearchPage() {
             <div className="flex flex-col gap-8">
               {/* Avatar + identity */}
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-[10px] bg-gradient-to-br from-[#ffc83d] via-[#ff6b2c] to-[#3b82f6] flex items-center justify-center text-xl flex-shrink-0 shadow-[0_12px_24px_rgba(19,33,46,0.12)] ring-1 ring-white/70">
-                  🧙‍♀️
-                </div>
+                <AssistantAvatar size="sm" />
                 <div>
-                  <p className="text-[#587082] text-xs leading-none mb-1">Hi there! I'm your</p>
-                  <p className="text-[#13212e] text-sm font-bold leading-none">magical talent sourcer <span className="text-[#ff6b2c]">✨</span></p>
+                  <p className="text-[#587082] text-xs leading-none mb-1">Hi, I&apos;m your</p>
+                  <p className="text-[#13212e] text-sm font-bold leading-none">talent search partner <span className="text-[#ff6b2c]">✨</span></p>
                 </div>
               </div>
 
               {/* Searched for */}
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-[#8698a4] mb-2">
-                  Searched for
+                  What I searched for
                 </p>
-                <p className="text-sm text-[#587082] leading-relaxed whitespace-pre-wrap">
-                  {rewrittenQuery || finalQuery}
-                </p>
+                <div className="flex flex-col gap-2">
+                  {resultsCriteria.map((criterion, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 bg-[rgba(221,231,236,0.72)] border border-[#c6d4db] rounded-[10px] px-3 py-2"
+                    >
+                      <span className="text-[10px] font-semibold text-[#8698a4] w-5 flex-shrink-0 tabular-nums">
+                        C{i + 1}
+                      </span>
+                      <span className="text-xs text-[#48606f] leading-relaxed">
+                        {criterion}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Actions */}
               <div className="flex items-center justify-between">
                 <button
-                  onClick={() => setStage('refining')}
+                  onClick={handleRefineSearch}
                   className="text-sm text-[#3b82f6] hover:text-[#163a59] font-medium transition-colors"
                 >
-                  ← Refine search
+                  ← Tighten this search
                 </button>
                 <button
                   onClick={handleReset}
                   className="text-sm font-semibold text-white bg-[#163a59] hover:bg-[#0f2c44] border border-[#163a59] px-4 py-2 rounded-[8px] transition-colors"
                 >
-                  New search →
+                  Start a new search →
                 </button>
               </div>
 
@@ -731,12 +1117,10 @@ export default function SearchPage() {
             <div className="flex flex-col gap-6">
               {/* Avatar + identity */}
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-[10px] bg-gradient-to-br from-[#ffc83d] via-[#ff6b2c] to-[#3b82f6] flex items-center justify-center text-xl flex-shrink-0 shadow-[0_12px_24px_rgba(19,33,46,0.12)] ring-1 ring-white/70">
-                  🧙‍♀️
-                </div>
+                <AssistantAvatar size="sm" />
                 <div>
-                  <p className="text-[#587082] text-xs leading-none mb-1">Hi there! I'm your</p>
-                  <p className="text-[#13212e] text-sm font-bold leading-none">magical talent sourcer <span className="text-[#ff6b2c]">✨</span></p>
+                  <p className="text-[#587082] text-xs leading-none mb-1">Hi, I&apos;m your</p>
+                  <p className="text-[#13212e] text-sm font-bold leading-none">talent search partner <span className="text-[#ff6b2c]">✨</span></p>
                 </div>
               </div>
 
@@ -753,14 +1137,14 @@ export default function SearchPage() {
               {/* Refinement input */}
               <form onSubmit={handleRefine} className="flex flex-col gap-3">
                 <label className="text-base font-bold text-[#13212e]">
-                  What would you like to change?
+                  What should I change?
                 </label>
                 <input
                   ref={refineRef}
                   type="text"
                   value={refinementInput}
                   onChange={e => setRefinementInput(e.target.value)}
-                  placeholder="e.g. focus more on team leadership, remove insurance"
+                  placeholder="e.g. focus more on team leadership, remove fintech"
                   className="w-full bg-[rgba(255,255,255,0.84)] border border-[#cad9df] rounded-[10px] px-5 py-4 text-base text-[#13212e] placeholder:text-[#8698a4] focus:outline-none focus:border-[#3b82f6] transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_14px_28px_rgba(19,33,46,0.05)]"
                 />
                 {error && (
@@ -774,14 +1158,14 @@ export default function SearchPage() {
                     disabled={!refinementInput.trim() || loading}
                     className="bg-[#163a59] text-white px-6 py-2.5 rounded-[8px] text-sm font-bold hover:bg-[#0f2c44] disabled:opacity-30 transition-colors"
                   >
-                    {loading ? 'Searching…' : '🔍 Refine'}
+                    {loading ? 'Searching…' : '🔍 Update search'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setStage('results')}
                     className="text-sm text-[#587082] hover:text-[#13212e] transition-colors"
                   >
-                    Cancel
+                    Back
                   </button>
                 </div>
               </form>
@@ -791,9 +1175,8 @@ export default function SearchPage() {
           {/* ── PREVIOUS SEARCHES (persistent) ── */}
           {searchHistory.length > 0 && (() => {
             // Group: collect leading 'refined' entries, then attach to the 'new' that follows
-            type HistoryEntry = typeof searchHistory[number];
-            const groups: { base: HistoryEntry; refinements: HistoryEntry[] }[] = [];
-            let pending: HistoryEntry[] = [];
+            const groups: { base: SearchHistoryEntry; refinements: SearchHistoryEntry[] }[] = [];
+            let pending: SearchHistoryEntry[] = [];
             for (const entry of searchHistory) {
               if (entry.type === 'refined') {
                 pending.push(entry);
@@ -808,33 +1191,103 @@ export default function SearchPage() {
             return (
               <div className="mt-10 pt-8 border-t border-[#d7e4ea]">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-[#8698a4] mb-3">
-                  Previous searches
+                  Last 3 searches
                 </p>
                 <div className="flex flex-col gap-4">
                   {groups.map((group, gi) => (
                     <div key={gi}>
                       {/* New search */}
-                      <button
-                        onClick={() => handleSearch(group.base.query, group.base.mustHave)}
-                        className="text-left text-xs text-[#587082] hover:text-[#13212e] leading-snug transition-colors line-clamp-2 w-full"
-                        title={group.base.label}
-                      >
-                        {group.base.label}
-                      </button>
+                      <div className="rounded-[10px] border border-[#d7e4ea] bg-[rgba(255,255,255,0.46)] overflow-hidden">
+                        <div className="flex items-center gap-2 px-3 py-2.5">
+                          <button
+                            onClick={() => openCriteriaConfirmation(group.base.query, group.base.criteria, group.base.importance)}
+                            className="text-left flex-1 min-w-0 transition-colors"
+                            title={group.base.label}
+                          >
+                            <div className="text-[10px] font-semibold uppercase tracking-widest text-[#8698a4] mb-1">
+                              Search
+                            </div>
+                            <div className="text-xs text-[#587082] leading-snug truncate">
+                              {summarizeCriteria(group.base.criteria)}
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedHistory(prev =>
+                                prev.includes(group.base.query)
+                                  ? prev.filter(item => item !== group.base.query)
+                                  : [...prev, group.base.query]
+                              )
+                            }
+                            className="text-[10px] font-semibold uppercase tracking-widest text-[#8698a4] hover:text-[#587082] transition-colors"
+                          >
+                            {expandedHistory.includes(group.base.query) ? 'Hide' : 'Show'}
+                          </button>
+                        </div>
+                        {expandedHistory.includes(group.base.query) && (
+                          <div className="px-3 pb-3 flex flex-col gap-1.5">
+                            {group.base.criteria.map((criterion, i) => (
+                              <div
+                                key={i}
+                                className="flex items-center gap-2 bg-[rgba(221,231,236,0.52)] border border-[#d7e4ea] rounded-[8px] px-2.5 py-2 text-xs text-[#587082]"
+                              >
+                                <span className="text-[9px] font-semibold text-[#8698a4] w-4 flex-shrink-0 tabular-nums">
+                                  C{i + 1}
+                                </span>
+                                <span className="leading-snug">{criterion}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
 
                       {/* Refinements clustered below */}
                       {group.refinements.length > 0 && (
                         <div className="mt-2 ml-2 pl-3 border-l border-[#d7e4ea] flex flex-col gap-2">
                           {group.refinements.map((r, ri) => (
-                            <button
-                              key={ri}
-                              onClick={() => handleSearch(r.query, r.mustHave)}
-                              className="text-left text-xs text-[#8698a4] hover:text-[#587082] leading-snug transition-colors line-clamp-2 w-full"
-                              title={r.label}
-                            >
-                              <span className="text-[9px] font-semibold uppercase tracking-widest text-[#8698a4] block mb-0.5">↳ refined</span>
-                              {r.label}
-                            </button>
+                            <div key={ri} className="rounded-[10px] border border-[#d7e4ea] bg-[rgba(255,255,255,0.32)] overflow-hidden">
+                              <div className="flex items-center gap-2 px-3 py-2.5">
+                                <button
+                                  onClick={() => openCriteriaConfirmation(r.query, r.criteria, r.importance)}
+                                  className="text-left flex-1 min-w-0 transition-colors"
+                                  title={r.label}
+                                >
+                                  <span className="text-[9px] font-semibold uppercase tracking-widest text-[#8698a4] block mb-0.5">↳ updated</span>
+                                  <div className="text-xs text-[#8698a4] leading-snug truncate">
+                                    {summarizeCriteria(r.criteria)}
+                                  </div>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedHistory(prev =>
+                                      prev.includes(r.query)
+                                        ? prev.filter(item => item !== r.query)
+                                        : [...prev, r.query]
+                                    )
+                                  }
+                                  className="text-[10px] font-semibold uppercase tracking-widest text-[#8698a4] hover:text-[#587082] transition-colors"
+                                >
+                                  {expandedHistory.includes(r.query) ? 'Hide' : 'Show'}
+                                </button>
+                              </div>
+                              {expandedHistory.includes(r.query) && (
+                                <div className="px-3 pb-3 flex flex-col gap-1.5">
+                                  {r.criteria.map((criterion, i) => (
+                                    <div
+                                      key={i}
+                                      className="flex items-center gap-2 bg-[rgba(221,231,236,0.42)] border border-[#d7e4ea] rounded-[8px] px-2.5 py-2 text-xs text-[#8698a4]"
+                                    >
+                                      <span className="text-[9px] font-semibold text-[#9aa8b1] w-4 flex-shrink-0 tabular-nums">
+                                        C{i + 1}
+                                      </span>
+                                      <span className="leading-snug">{criterion}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           ))}
                         </div>
                       )}
@@ -853,10 +1306,10 @@ export default function SearchPage() {
         ref={rightPanelRef}
         className={`
           flex-1 overflow-y-auto transition-opacity duration-700 ease-in-out
-          ${isSplit ? 'opacity-100 relative z-10' : 'opacity-0 pointer-events-none'}
+          ${showResultsOnlyLayout || isSplit ? 'opacity-100 relative z-10' : 'opacity-0 pointer-events-none'}
         `}
       >
-        <div className="px-10 py-14">
+        <div className={`${showResultsOnlyLayout ? 'px-10 py-10' : 'px-10 py-14'}`}>
 
           {/* ── LOADING SKELETON ── */}
           {loading && (
@@ -887,6 +1340,118 @@ export default function SearchPage() {
           {/* ── RESULT CARDS ── */}
           {(stage === 'results' || ((stage === 'confirming' || stage === 'nudging') && results.length > 0)) && !loading && (
             <div>
+              {showResultsOnlyLayout && (
+                <div className="sticky top-0 z-20 mb-5">
+                  <div className="rounded-[16px] border border-[#d7e4ea] bg-[rgba(246,250,252,0.92)] backdrop-blur-md shadow-[0_20px_45px_rgba(19,33,46,0.08)] overflow-hidden">
+                    <div className="flex flex-col gap-4 px-5 py-4 border-b border-[#dfe9ee] md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-[24px] font-black tracking-[-0.04em] text-[#13212e] leading-none">
+                          ✨ Strong matches so far
+                        </p>
+                        <p className="text-sm text-[#587082] mt-1">
+                          I&apos;m checking every profile against the criteria below.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3 flex-wrap md:justify-end">
+                        <span className="text-[11px] font-semibold uppercase tracking-widest text-[#8698a4]">
+                          {visibleResults.length} results
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleRefineSearch}
+                          className="px-4 py-2 rounded-[10px] text-sm font-semibold text-[#163a59] border border-[#cad9df] bg-white/70 hover:border-[#9fb7c2] hover:bg-white transition-colors"
+                        >
+                          Tighten this search
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleReset}
+                          className="px-4 py-2 rounded-[10px] text-sm font-semibold text-white bg-[#163a59] hover:bg-[#0f2c44] transition-colors"
+                        >
+                          Start a new search
+                        </button>
+                      </div>
+                    </div>
+
+                    {resultsCriteria.length > 0 && (
+                      <div className="px-5 py-4">
+                        {resultGuidance && (
+                          <div className="mb-4 rounded-[12px] border border-[#d7e4ea] bg-[rgba(255,255,255,0.74)] px-4 py-3">
+                            <div className="flex items-start gap-3 mb-2">
+                              <AssistantAvatar size="sm" className="scale-[0.9]" />
+                              <div className="min-w-0">
+                                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#8698a4] mb-1">
+                                  🧠 What I&apos;m seeing
+                                </p>
+                                <p className="text-sm font-semibold text-[#13212e]">{resultGuidance.headline}</p>
+                              </div>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              {resultGuidance.bullets.map((bullet, i) => (
+                                <p key={i} className="text-xs text-[#587082] leading-relaxed">
+                                  {bullet}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          {resultsCriteria.map((criterion, i) => (
+                            <div
+                              key={i}
+                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] transition-all ${
+                                selectedCriterion === i
+                                  ? 'border-[#163a59] bg-[#163a59] text-white shadow-[0_10px_22px_rgba(22,58,89,0.18)]'
+                                  : 'border-[#d7e4ea] bg-[rgba(221,231,236,0.52)] text-[#48606f] hover:border-[#9fb7c2]'
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => setSelectedCriterion(prev => (prev === i ? null : i))}
+                                className="inline-flex items-center gap-2"
+                                title={selectedCriterion === i ? 'Clear criterion highlight' : 'Highlight this criterion across cards'}
+                              >
+                                <span className={`font-semibold ${selectedCriterion === i ? 'text-white/80' : 'text-[#8698a4]'}`}>C{i + 1}</span>
+                                <span>{criterion}</span>
+                              </button>
+                              <div className={`inline-flex items-center p-0.5 rounded-full border transition-colors ${
+                                selectedCriterion === i
+                                  ? 'border-white/20 bg-white/10'
+                                  : 'border-[#d7e4ea] bg-white/70'
+                              }`}>
+                                {(['regular', 'high'] as CriterionImportance[]).map((level) => (
+                                  <button
+                                    key={level}
+                                    type="button"
+                                    onClick={() => handleUpdateImportance(i, level)}
+                                    className={`px-2.5 py-0.5 rounded-full text-[9px] font-semibold uppercase transition-colors ${
+                                      effectiveImportance[i] === level
+                                        ? selectedCriterion === i
+                                          ? level === 'high'
+                                            ? 'bg-[#f4fffb] text-[#146a55]'
+                                            : 'bg-white text-[#557086]'
+                                          : level === 'high'
+                                            ? 'bg-[#146a55] text-white'
+                                            : 'bg-white text-[#557086]'
+                                        : selectedCriterion === i
+                                          ? 'text-white/70'
+                                          : 'text-[#8698a4] hover:text-[#13212e]'
+                                    }`}
+                                    title={level === 'high' ? 'Stronger preference' : 'Default preference'}
+                                  >
+                                  {level === 'high' ? '💪' : 'Std'}
+                                </button>
+                              ))}
+                            </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-3">
                 {(() => {
                   const start = (page - 1) * PAGE_SIZE;
@@ -898,11 +1463,12 @@ export default function SearchPage() {
                     >
                       <CandidateCard
                         candidate={candidate}
-                        rank={start + i + 1}
                         query={rewrittenQuery || finalQuery}
+                        criteria={resultsCriteria}
+                        criterionImportance={effectiveImportance}
+                        selectedCriterion={selectedCriterion}
                         maxRelevanceScore={poolMaxScore}
                         minRelevanceScore={poolMinScore}
-                        filters={activeFilters}
                       />
                     </div>
                   ));
@@ -933,8 +1499,8 @@ export default function SearchPage() {
 
               {visibleResults.length === 0 && (
                 <div className="text-center mt-20">
-                  <p className="text-[#587082] mb-2">No candidates found.</p>
-                  <p className="text-sm text-[#8698a4]">Try broadening your search.</p>
+                  <p className="text-[#587082] mb-2">I&apos;m not seeing enough strong fits yet.</p>
+                  <p className="text-sm text-[#8698a4]">I&apos;d broaden one or two criteria and try again.</p>
                 </div>
               )}
             </div>
