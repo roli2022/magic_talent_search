@@ -233,6 +233,50 @@ export default function CandidateCard({
               </p>
             )}
 
+            {criteriaMatches.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-[#e3edf1] flex items-start gap-2">
+                <span className="text-[10px] font-bold text-[#163a59] mt-0.5 w-[110px] flex-shrink-0 uppercase tracking-[0.08em] whitespace-nowrap">Criteria Match</span>
+                <div className="flex flex-wrap gap-1.5 min-w-0 flex-1">
+                  {criteriaMatches.map((criterion, i) => {
+                    const tone =
+                      criterion.status === 'match'
+                        ? 'bg-[#d7f5ea] text-[#0f8e61] border-[#b5e9d6]'
+                        : criterion.status === 'partial'
+                          ? 'bg-[#fff0bf] text-[#af7c05] border-[#ffe08b]'
+                          : 'bg-[#ffe3e3] text-[#d9485f] border-[#ffc5cc]';
+                    const isSelected = selectedCriterion === i;
+                    return (
+                      <span
+                        key={i}
+                        title={`${criterion.label}: ${criterion.reason}`}
+                        className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border font-semibold transition-all ${tone} ${isSelected ? 'ring-2 ring-[#163a59] ring-offset-1 scale-[1.03]' : ''}`}
+                      >
+                        C{i + 1}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {enriched.length > 0 && (
+              <div className="mt-3 rounded-[12px] border border-[rgba(255,179,102,0.45)] bg-[linear-gradient(135deg,rgba(255,244,214,0.96),rgba(255,233,215,0.96)_45%,rgba(223,240,255,0.92))] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.52)]">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="w-[30px] h-[30px] rounded-[9px] bg-[linear-gradient(135deg,#ffd66b,#ff8e42_50%,#1f7cf0)] flex items-center justify-center text-[15px] shadow-[0_8px_18px_rgba(19,33,46,0.12)] border border-[rgba(255,255,255,0.65)] flex-shrink-0">
+                    🧙‍♀️
+                  </div>
+                  <span className="text-[10px] font-bold text-[#163a59] uppercase tracking-[0.08em] whitespace-nowrap flex-shrink-0">AI read</span>
+                  <div className="flex flex-wrap gap-1.5 min-w-0 flex-1">
+                    {enriched.map((badge, i) => (
+                      <span key={i} title={badge.title} className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border ${badge.cls}`}>
+                        {badge.icon} {badge.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* AI Summary */}
             <div className="mt-3 pt-3 border-t border-[#e3edf1]">
               {sumLoading && !summary && (
@@ -248,52 +292,10 @@ export default function CandidateCard({
               )}
             </div>
 
-            {/* Direct match + AI signals + Actions */}
-            <div className="mt-3 pt-3 border-t border-[#e3edf1] flex items-start justify-between gap-3">
-
-              {/* Signals column */}
-              <div className="flex flex-col gap-2 flex-1 min-w-0">
-                {criteriaMatches.length > 0 && (
-                  <div className="flex items-start gap-2">
-                    <span className="text-[10px] font-bold text-[#163a59] mt-0.5 w-[110px] flex-shrink-0 uppercase tracking-[0.08em] whitespace-nowrap">Criteria Match</span>
-                    <div className="flex flex-wrap gap-1.5 min-w-0 flex-1">
-                      {criteriaMatches.map((criterion, i) => {
-                        const tone =
-                          criterion.status === 'match'
-                            ? 'bg-[#d7f5ea] text-[#0f8e61] border-[#b5e9d6]'
-                            : criterion.status === 'partial'
-                              ? 'bg-[#fff0bf] text-[#af7c05] border-[#ffe08b]'
-                              : 'bg-[#ffe3e3] text-[#d9485f] border-[#ffc5cc]';
-                        const isSelected = selectedCriterion === i;
-                        return (
-                          <span
-                            key={i}
-                            title={`${criterion.label}: ${criterion.reason}`}
-                            className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border font-semibold transition-all ${tone} ${isSelected ? 'ring-2 ring-[#163a59] ring-offset-1 scale-[1.03]' : ''}`}
-                          >
-                            C{i + 1}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {enriched.length > 0 && (
-                  <div className="flex items-start gap-2">
-                    <span className="text-[10px] font-bold text-[#163a59] mt-0.5 w-16 flex-shrink-0 uppercase tracking-[0.08em] whitespace-nowrap">AI signals</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {enriched.map((badge, i) => (
-                        <span key={i} title={badge.title} className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border ${badge.cls}`}>
-                          {badge.icon} {badge.label}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Actions column — always visible */}
-              <div className="flex flex-row gap-2 flex-shrink-0 items-center">
+            {/* Assistant actions */}
+            <div className="mt-3 pt-3 border-t border-[#e3edf1] flex items-start gap-3">
+              <span className="text-[10px] font-bold text-[#163a59] mt-1 w-[110px] flex-shrink-0 uppercase tracking-[0.08em] whitespace-nowrap">Next steps</span>
+              <div className="flex flex-row gap-2 flex-wrap items-center">
                 {/* LinkedIn — branded icon button */}
                 <a
                   href={candidate.url}
@@ -331,7 +333,6 @@ export default function CandidateCard({
                   </div>
                 </div>
               </div>
-
             </div>
 
           </div>

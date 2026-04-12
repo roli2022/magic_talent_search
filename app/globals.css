@@ -3,18 +3,18 @@
 @tailwind utilities;
 
 :root {
-  --bg: #dfe9ee;
+  --bg: #e1dbcf;
 }
 
 body {
   background:
-    radial-gradient(circle at 50% 120%, rgba(19, 33, 46, 0.12), transparent 42%),
-    radial-gradient(circle at 50% -10%, rgba(255, 255, 255, 0.28), transparent 34%),
-    radial-gradient(circle at 8% 0%, rgba(59, 130, 246, 0.2), transparent 26%),
+    radial-gradient(circle at 50% 120%, rgba(55, 40, 24, 0.13), transparent 42%),
+    radial-gradient(circle at 50% -10%, rgba(255, 255, 255, 0.34), transparent 34%),
+    radial-gradient(circle at 8% 0%, rgba(59, 130, 246, 0.1), transparent 22%),
     radial-gradient(circle at 92% 4%, rgba(255, 107, 44, 0.18), transparent 24%),
-    radial-gradient(circle at 50% 100%, rgba(25, 179, 125, 0.08), transparent 30%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.08)),
-    radial-gradient(140% 84% at 50% 0%, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.08)),
+    radial-gradient(circle at 50% 100%, rgba(25, 179, 125, 0.05), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.06)),
+    radial-gradient(140% 84% at 50% 0%, rgba(255, 250, 242, 0.38), rgba(255, 255, 255, 0.06)),
     var(--bg);
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 }
@@ -49,7 +49,7 @@ body {
     repeating-radial-gradient(
       145% 100% at 0% 14%,
       transparent 0 18px,
-      rgba(19, 33, 46, 0.13) 18px 20px,
+      rgba(74, 56, 34, 0.13) 18px 20px,
       transparent 20px 34px
     );
   mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.86), rgba(0, 0, 0, 0.2));
@@ -64,7 +64,7 @@ body {
     repeating-radial-gradient(
       132% 98% at 44% 10%,
       transparent 0 16px,
-      rgba(19, 33, 46, 0.1) 16px 18px,
+      rgba(74, 56, 34, 0.1) 16px 18px,
       transparent 18px 30px
     );
   transform: rotate(-3deg);
@@ -80,7 +80,7 @@ body {
     repeating-radial-gradient(
       132% 100% at 100% 14%,
       transparent 0 17px,
-      rgba(19, 33, 46, 0.12) 17px 19px,
+      rgba(74, 56, 34, 0.12) 17px 19px,
       transparent 19px 33px
     );
   mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.58), rgba(0, 0, 0, 0.12));

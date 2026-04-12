@@ -214,6 +214,46 @@ function buildCriteriaFromDescribeRoleInputs(
   return criteria;
 }
 
+function buildShortCriterionLabel(criterion: string): string {
+  const lower = criterion.toLowerCase().trim();
+
+  const yearsMatch = criterion.match(/(\d+\+?)\s*years?/i);
+  if (yearsMatch) {
+    if (lower.includes('product')) return `${yearsMatch[1]} years PM`;
+    return `${yearsMatch[1]} years`;
+  }
+
+  if (lower.includes('bengaluru') || lower.includes('bangalore')) return 'Bengaluru';
+  if (lower.includes('mumbai')) return 'Mumbai';
+  if (lower.includes('delhi')) return 'Delhi NCR';
+  if (lower.includes('remote')) return 'Remote';
+  if (lower.includes('node')) return 'Node.js backend';
+  if (lower.includes('javascript') || lower.includes('front-end') || lower.includes('frontend')) return 'JavaScript + FE';
+  if (lower.includes('sql') || lower.includes('nosql') || lower.includes('database')) return 'Databases';
+  if (lower.includes('fintech') || lower.includes('enterprise')) return 'Fintech / enterprise';
+  if (lower.includes('b2b saas')) return 'B2B SaaS';
+  if (lower.includes('team') || lower.includes('leadership')) return 'Team leadership';
+  if (lower.includes('stakeholder')) return 'Stakeholder mgmt';
+  if (lower.includes('degree') || lower.includes('education') || lower.includes('computer science')) return 'Education';
+  if (lower.includes('0 to 1') || lower.includes('0-to-1')) return '0-to-1 build';
+  if (lower.includes('product manager')) return 'Product manager';
+
+  return criterion
+    .replace(/^based in\s+/i, '')
+    .replace(/^also strong in\s+/i, '')
+    .replace(/^education:\s+/i, '')
+    .replace(/^must-have:\s+/i, '')
+    .replace(/^has\s+/i, '')
+    .replace(/^experience with\s+/i, '')
+    .replace(/^experience in\s+/i, '')
+    .replace(/^strong\s+/i, '')
+    .split(/[,.]/)[0]
+    .trim()
+    .split(/\s+/)
+    .slice(0, 3)
+    .join(' ');
+}
+
 function AssistantAvatar({
   size = 'md',
   className = '',
@@ -271,6 +311,7 @@ export default function SearchPage() {
   const [searchHistory, setSearchHistory]   = useState<SearchHistoryEntry[]>([]);
   const [expandedHistory, setExpandedHistory] = useState<string[]>([]);
   const [selectedCriterion, setSelectedCriterion] = useState<number | null>(null);
+  const [criteriaExpanded, setCriteriaExpanded] = useState(false);
   const [hasSearched, setHasSearched]       = useState(false);
   const [activeFilters, setActiveFilters]   = useState<Record<string, unknown>>({});
 
@@ -627,6 +668,10 @@ export default function SearchPage() {
   const effectiveImportance = resultsCriteria.map((_, i) => criterionImportance[i] ?? 'regular');
   const filledCriteriaCount = jdRequirements.filter(req => req.trim()).length;
 
+  useEffect(() => {
+    setCriteriaExpanded(false);
+  }, [rewrittenQuery, finalQuery]);
+
   // Filter out results below 30% relative strength within the pool
   const scoreRange = poolMaxScore - poolMinScore;
   const visibleResults = results
@@ -953,7 +998,7 @@ export default function SearchPage() {
                             key={level}
                             type="button"
                             onClick={() => handleUpdateImportance(i, level)}
-                            className={`px-3 py-1 rounded-full text-[10px] font-semibold uppercase transition-colors ${
+                            className={`px-3 py-1 rounded-full text-[10px] font-semibold transition-colors ${
                               (criterionImportance[i] ?? 'regular') === level
                                 ? level === 'high'
                                   ? 'bg-[#146a55] text-white shadow-[0_6px_14px_rgba(20,106,85,0.22)]'
@@ -961,7 +1006,7 @@ export default function SearchPage() {
                                 : 'text-[#8698a4] hover:text-[#13212e]'
                             }`}
                           >
-                            {level === 'high' ? '💪' : 'Std'}
+                            {level === 'high' ? 'Imp' : 'Reg'}
                           </button>
                         ))}
                       </div>
@@ -1361,6 +1406,15 @@ export default function SearchPage() {
                         <span className="text-[11px] font-semibold uppercase tracking-widest text-[#8698a4]">
                           {visibleResults.length} results
                         </span>
+                        {resultsCriteria.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setCriteriaExpanded(prev => !prev)}
+                            className="px-4 py-2 rounded-[10px] text-sm font-semibold text-[#163a59] border border-[#cad9df] bg-white/70 hover:border-[#9fb7c2] hover:bg-white transition-colors"
+                          >
+                            {criteriaExpanded ? 'Show less' : 'Show search details'}
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={handleRefineSearch}
@@ -1380,7 +1434,7 @@ export default function SearchPage() {
 
                     {resultsCriteria.length > 0 && (
                       <div className="px-5 py-4">
-                        {resultGuidance && (
+                        {criteriaExpanded && resultGuidance && (
                           <div className="mb-4 rounded-[12px] border border-[#d7e4ea] bg-[rgba(255,255,255,0.74)] px-4 py-3">
                             <div className="flex items-start gap-3 mb-2">
                               <AssistantAvatar size="sm" className="scale-[0.9]" />
@@ -1400,57 +1454,89 @@ export default function SearchPage() {
                             </div>
                           </div>
                         )}
-                        <div className="flex flex-wrap gap-2">
-                          {resultsCriteria.map((criterion, i) => (
-                            <div
-                              key={i}
-                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] transition-all ${
-                                selectedCriterion === i
-                                  ? 'border-[#163a59] bg-[#163a59] text-white shadow-[0_10px_22px_rgba(22,58,89,0.18)]'
-                                  : 'border-[#d7e4ea] bg-[rgba(221,231,236,0.52)] text-[#48606f] hover:border-[#9fb7c2]'
-                              }`}
-                            >
+
+                        {!criteriaExpanded ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {resultsCriteria.map((criterion, i) => (
                               <button
+                                key={i}
                                 type="button"
                                 onClick={() => setSelectedCriterion(prev => (prev === i ? null : i))}
-                                className="inline-flex items-center gap-2"
-                                title={selectedCriterion === i ? 'Clear criterion highlight' : 'Highlight this criterion across cards'}
+                                title={criterion}
+                                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] transition-all ${
+                                  selectedCriterion === i
+                                    ? 'border-[#163a59] bg-[#163a59] text-white shadow-[0_10px_22px_rgba(22,58,89,0.18)]'
+                                    : effectiveImportance[i] === 'high'
+                                      ? 'border-[#b5e9d6] bg-[rgba(215,245,234,0.82)] text-[#0f8e61] hover:border-[#19b37d] shadow-[0_8px_18px_rgba(25,179,125,0.08)]'
+                                      : 'border-[#d7e4ea] bg-[rgba(221,231,236,0.52)] text-[#48606f] hover:border-[#9fb7c2]'
+                                }`}
                               >
-                                <span className={`font-semibold ${selectedCriterion === i ? 'text-white/80' : 'text-[#8698a4]'}`}>C{i + 1}</span>
-                                <span>{criterion}</span>
+                                <span className={`font-semibold ${selectedCriterion === i ? 'text-white/80' : effectiveImportance[i] === 'high' ? 'text-[#0f8e61]' : 'text-[#8698a4]'}`}>C{i + 1}</span>
+                                <span>{buildShortCriterionLabel(criterion)}</span>
+                                {effectiveImportance[i] === 'high' && (
+                                  <span className={`text-[10px] ${selectedCriterion === i ? 'text-white/80' : ''}`}>💪</span>
+                                )}
                               </button>
-                              <div className={`inline-flex items-center p-0.5 rounded-full border transition-colors ${
-                                selectedCriterion === i
-                                  ? 'border-white/20 bg-white/10'
-                                  : 'border-[#d7e4ea] bg-white/70'
-                              }`}>
-                                {(['regular', 'high'] as CriterionImportance[]).map((level) => (
-                                  <button
-                                    key={level}
-                                    type="button"
-                                    onClick={() => handleUpdateImportance(i, level)}
-                                    className={`px-2.5 py-0.5 rounded-full text-[9px] font-semibold uppercase transition-colors ${
-                                      effectiveImportance[i] === level
-                                        ? selectedCriterion === i
-                                          ? level === 'high'
-                                            ? 'bg-[#f4fffb] text-[#146a55]'
-                                            : 'bg-white text-[#557086]'
-                                          : level === 'high'
-                                            ? 'bg-[#146a55] text-white'
-                                            : 'bg-white text-[#557086]'
-                                        : selectedCriterion === i
-                                          ? 'text-white/70'
-                                          : 'text-[#8698a4] hover:text-[#13212e]'
-                                    }`}
-                                    title={level === 'high' ? 'Stronger preference' : 'Default preference'}
-                                  >
-                                  {level === 'high' ? '💪' : 'Std'}
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-2">
+                            {resultsCriteria.map((criterion, i) => (
+                              <div
+                                key={i}
+                                className={`flex items-center justify-between gap-3 rounded-[12px] border px-3 py-2.5 text-[11px] transition-all ${
+                                  selectedCriterion === i
+                                    ? 'border-[#163a59] bg-[#163a59] text-white shadow-[0_10px_22px_rgba(22,58,89,0.18)]'
+                                    : effectiveImportance[i] === 'high'
+                                      ? 'border-[#b5e9d6] bg-[rgba(215,245,234,0.62)] text-[#48606f]'
+                                      : 'border-[#d7e4ea] bg-[rgba(221,231,236,0.42)] text-[#48606f]'
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedCriterion(prev => (prev === i ? null : i))}
+                                  className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                                  title={selectedCriterion === i ? 'Clear criterion highlight' : 'Highlight this criterion across cards'}
+                                >
+                                  <span className={`mt-0.5 font-semibold flex-shrink-0 ${selectedCriterion === i ? 'text-white/80' : effectiveImportance[i] === 'high' ? 'text-[#0f8e61]' : 'text-[#8698a4]'}`}>C{i + 1}</span>
+                                  <span className="leading-relaxed">{criterion}</span>
+                                  {effectiveImportance[i] === 'high' && (
+                                    <span className={`mt-0.5 flex-shrink-0 text-[10px] ${selectedCriterion === i ? 'text-white/80' : 'text-[#0f8e61]'}`}>💪</span>
+                                  )}
                                 </button>
-                              ))}
-                            </div>
-                            </div>
-                          ))}
-                        </div>
+                                <div className={`inline-flex items-center p-0.5 rounded-full border transition-colors flex-shrink-0 ${
+                                  selectedCriterion === i
+                                    ? 'border-white/20 bg-white/10'
+                                    : 'border-[#d7e4ea] bg-white/70'
+                                }`}>
+                                  {(['regular', 'high'] as CriterionImportance[]).map((level) => (
+                                    <button
+                                      key={level}
+                                      type="button"
+                                      onClick={() => handleUpdateImportance(i, level)}
+                                      className={`px-2.5 py-0.5 rounded-full text-[9px] font-semibold transition-colors ${
+                                        effectiveImportance[i] === level
+                                          ? selectedCriterion === i
+                                            ? level === 'high'
+                                              ? 'bg-[#f4fffb] text-[#146a55]'
+                                              : 'bg-white text-[#557086]'
+                                            : level === 'high'
+                                              ? 'bg-[#146a55] text-white'
+                                              : 'bg-white text-[#557086]'
+                                          : selectedCriterion === i
+                                            ? 'text-white/70'
+                                            : 'text-[#8698a4] hover:text-[#13212e]'
+                                      }`}
+                                      title={level === 'high' ? 'Stronger preference' : 'Default preference'}
+                                    >
+                                      {level === 'high' ? 'Imp' : 'Regular'}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
