@@ -311,6 +311,7 @@ export default function SearchPage() {
   const [searchHistory, setSearchHistory]   = useState<SearchHistoryEntry[]>([]);
   const [expandedHistory, setExpandedHistory] = useState<string[]>([]);
   const [selectedCriterion, setSelectedCriterion] = useState<number | null>(null);
+  const [guidanceExpanded, setGuidanceExpanded] = useState(true);
   const [criteriaExpanded, setCriteriaExpanded] = useState(false);
   const [hasSearched, setHasSearched]       = useState(false);
   const [activeFilters, setActiveFilters]   = useState<Record<string, unknown>>({});
@@ -326,6 +327,7 @@ export default function SearchPage() {
   const [jdError, setJdError]               = useState<string | null>(null);
   const [jdRebuilding, setJdRebuilding]     = useState(false);
   const [jdNewRequirement, setJdNewRequirement] = useState('');
+  const [jdNewRequirementImportance, setJdNewRequirementImportance] = useState<CriterionImportance>('regular');
   const [criterionImportance, setCriterionImportance] = useState<CriterionImportance[]>([]);
   const jdInputRef = useRef<HTMLInputElement>(null);
 
@@ -418,6 +420,7 @@ export default function SearchPage() {
     setJdRequirements([]);
     setCriterionImportance([]);
     setJdNewRequirement('');
+    setJdNewRequirementImportance('regular');
     setAnalyzing(true);
     try {
       const res = await fetch('/api/analyze', {
@@ -464,6 +467,7 @@ export default function SearchPage() {
       const requirements = data.requirements || [];
       setJdRequirements(requirements);
       setCriterionImportance(requirements.map(() => 'regular'));
+      setJdNewRequirementImportance('regular');
       setFinalQuery(data.query || '');
       setStage('confirming');
     } catch (err) {
@@ -516,8 +520,9 @@ export default function SearchPage() {
     if (!next) return;
     if (jdRequirements.length >= MAX_CRITERIA) return;
     setJdRequirements(prev => [...prev, next]);
-    setCriterionImportance(prev => [...prev, 'regular']);
+    setCriterionImportance(prev => [...prev, jdNewRequirementImportance]);
     setJdNewRequirement('');
+    setJdNewRequirementImportance('regular');
   }
 
   function openCriteriaConfirmation(query: string, criteriaOverride?: string[], importanceOverride?: CriterionImportance[]) {
@@ -539,6 +544,7 @@ export default function SearchPage() {
       nextImportance
     );
     setJdNewRequirement('');
+    setJdNewRequirementImportance('regular');
     setSelectedCriterion(null);
     setStage('confirming');
   }
@@ -669,6 +675,7 @@ export default function SearchPage() {
   const filledCriteriaCount = jdRequirements.filter(req => req.trim()).length;
 
   useEffect(() => {
+    setGuidanceExpanded(true);
     setCriteriaExpanded(false);
   }, [rewrittenQuery, finalQuery]);
 
@@ -700,6 +707,15 @@ export default function SearchPage() {
       .sort((a, b) => a.avg - b.avg)[0];
     const strongest = [...stats].sort((a, b) => b.avg - a.avg)[0];
     const weakest = [...stats].sort((a, b) => a.avg - b.avg)[0];
+    const strongCount = visibleResults.filter(candidate => {
+      const matches = buildCriteriaMatches(candidate, resultsCriteria);
+      return computeWeightedMatchScore(matches, effectiveImportance) >= 75;
+    }).length;
+    const promisingCount = visibleResults.filter(candidate => {
+      const matches = buildCriteriaMatches(candidate, resultsCriteria);
+      const score = computeWeightedMatchScore(matches, effectiveImportance);
+      return score >= 55 && score < 75;
+    }).length;
 
     const headline =
       weakHigh && weakHigh.avg < 0.45
@@ -717,7 +733,44 @@ export default function SearchPage() {
         : `Use criterion weights to tell the system what should matter most in ranking.`,
     ];
 
-    return { headline, bullets };
+    const cards = [
+      {
+        tone: 'lead' as const,
+        eyebrow: 'What I’m seeing',
+        title: headline,
+        body: bullets[0],
+      },
+      {
+        tone: 'neutral' as const,
+        eyebrow: 'Pipeline snapshot',
+        title: `${strongCount} strong fit${strongCount === 1 ? '' : 's'} · ${promisingCount} promising`,
+        body: strongCount > 0
+          ? 'You have a workable shortlist now. Review the strongest lane before widening the search.'
+          : 'This is still more of a calibration pass. The top group is promising, but the brief is holding the pool tight.',
+      },
+      {
+        tone: weakHigh && weakHigh.avg < 0.45 ? 'warning' as const : 'neutral' as const,
+        eyebrow: 'Main constraint',
+        title: weakHigh && weakHigh.avg < 0.45
+          ? `C${weakHigh.index + 1} is the main narrowing factor`
+          : `C${weakest.index + 1} is the hardest criterion to satisfy`,
+        body: weakHigh && weakHigh.avg < 0.45
+          ? `If you need a wider pool, relax or rewrite C${weakHigh.index + 1} first.`
+          : `Candidates are consistently weaker on C${weakest.index + 1} than on the rest of the brief.`,
+      },
+      {
+        tone: 'success' as const,
+        eyebrow: 'Best next move',
+        title: strongCount > 0
+          ? `Start with the top ${Math.min(strongCount, 8)} profiles`
+          : 'Start with the promising band first',
+        body: strongest && weakest && strongest.index !== weakest.index
+          ? `Keep C${strongest.index + 1} anchored. It is doing the clearest sorting work right now.`
+          : bullets[1],
+      },
+    ];
+
+    return { cards };
   })();
   const showResultsOnlyLayout = stage === 'results' || (loading && hasSearched);
 
@@ -1039,6 +1092,24 @@ export default function SearchPage() {
                         placeholder="Add one more criterion"
                         className="flex-1 bg-transparent text-sm text-[#13212e] placeholder:text-[#8698a4] focus:outline-none"
                       />
+                      <div className="flex items-center p-0.5 rounded-full bg-[#edf4f7] border border-[#d7e4ea] flex-shrink-0">
+                        {(['regular', 'high'] as CriterionImportance[]).map((level) => (
+                          <button
+                            key={level}
+                            type="button"
+                            onClick={() => setJdNewRequirementImportance(level)}
+                            className={`px-3 py-1 rounded-full text-[10px] font-semibold transition-colors ${
+                              jdNewRequirementImportance === level
+                                ? level === 'high'
+                                  ? 'bg-[#146a55] text-white shadow-[0_6px_14px_rgba(20,106,85,0.22)]'
+                                  : 'bg-white text-[#557086] shadow-[0_4px_10px_rgba(19,33,46,0.08)]'
+                                : 'text-[#8698a4] hover:text-[#13212e]'
+                            }`}
+                          >
+                            {level === 'high' ? 'Imp' : 'Reg'}
+                          </button>
+                        ))}
+                      </div>
                       <button
                         type="button"
                         onClick={handleAddRequirement}
@@ -1406,15 +1477,6 @@ export default function SearchPage() {
                         <span className="text-[11px] font-semibold uppercase tracking-widest text-[#8698a4]">
                           {visibleResults.length} results
                         </span>
-                        {resultsCriteria.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setCriteriaExpanded(prev => !prev)}
-                            className="px-4 py-2 rounded-[10px] text-sm font-semibold text-[#163a59] border border-[#cad9df] bg-white/70 hover:border-[#9fb7c2] hover:bg-white transition-colors"
-                          >
-                            {criteriaExpanded ? 'Show less' : 'Show search details'}
-                          </button>
-                        )}
                         <button
                           type="button"
                           onClick={handleRefineSearch}
@@ -1434,109 +1496,163 @@ export default function SearchPage() {
 
                     {resultsCriteria.length > 0 && (
                       <div className="px-5 py-4">
-                        {criteriaExpanded && resultGuidance && (
-                          <div className="mb-4 rounded-[12px] border border-[#d7e4ea] bg-[rgba(255,255,255,0.74)] px-4 py-3">
-                            <div className="flex items-start gap-3 mb-2">
-                              <AssistantAvatar size="sm" className="scale-[0.9]" />
-                              <div className="min-w-0">
-                                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#8698a4] mb-1">
-                                  🧠 What I&apos;m seeing
-                                </p>
-                                <p className="text-sm font-semibold text-[#13212e]">{resultGuidance.headline}</p>
+                        {resultGuidance && (
+                          <div className="mb-4">
+                            <button
+                              type="button"
+                              onClick={() => setGuidanceExpanded(prev => !prev)}
+                              className="group w-full rounded-[16px] border border-[#1f3140] bg-[linear-gradient(135deg,#102332,#132c40_45%,#183851)] px-4 py-4 text-left shadow-[0_20px_45px_rgba(19,33,46,0.14)] transition-all hover:border-[#2f5069]"
+                            >
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <AssistantAvatar size="sm" className="scale-[0.9]" />
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] font-semibold uppercase tracking-widest text-[#8fb2c9] mb-1">
+                                      What I&apos;d do next
+                                    </p>
+                                    <p className="text-[15px] font-semibold tracking-[-0.03em] text-white leading-snug">
+                                      {resultGuidance.cards[0]?.title}
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className="flex-shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold text-[#cfe3f0]">
+                                  {guidanceExpanded ? 'Hide' : 'Open'}
+                                </span>
                               </div>
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              {resultGuidance.bullets.map((bullet, i) => (
-                                <p key={i} className="text-xs text-[#587082] leading-relaxed">
-                                  {bullet}
-                                </p>
-                              ))}
-                            </div>
+                            </button>
+
+                            {guidanceExpanded && (
+                              <div className="mt-3 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                                <div className="flex gap-3 min-w-max pr-1">
+                                  {resultGuidance.cards.map((card, i) => {
+                                    const toneClass =
+                                      card.tone === 'warning'
+                                        ? 'border-[#705c2f] bg-[linear-gradient(180deg,rgba(84,67,31,0.96),rgba(45,36,18,0.94))]'
+                                        : card.tone === 'success'
+                                          ? 'border-[#285845] bg-[linear-gradient(180deg,rgba(20,73,58,0.96),rgba(14,43,35,0.94))]'
+                                          : i === 0
+                                            ? 'border-[#26435d] bg-[linear-gradient(180deg,rgba(24,56,81,0.98),rgba(16,35,50,0.96))]'
+                                            : 'border-[#22394e] bg-[linear-gradient(180deg,rgba(20,44,63,0.97),rgba(14,31,45,0.95))]';
+
+                                    return (
+                                      <div
+                                        key={i}
+                                        className={`min-h-[148px] w-[300px] rounded-[16px] border px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_14px_30px_rgba(8,16,24,0.22)] ${toneClass}`}
+                                      >
+                                        {i === 0 ? (
+                                          <div className="flex items-start gap-3">
+                                            <AssistantAvatar size="sm" className="scale-[0.9]" />
+                                            <div className="min-w-0">
+                                              <p className="text-[10px] font-semibold uppercase tracking-widest text-[#8fb2c9] mb-1">
+                                                {card.eyebrow}
+                                              </p>
+                                              <p className="text-[15px] font-semibold tracking-[-0.03em] text-white leading-snug">
+                                                {card.title}
+                                              </p>
+                                              <p className="mt-2 text-[12px] leading-relaxed text-[#c5d9e6]">
+                                                {card.body}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div>
+                                            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#8fb2c9] mb-2">
+                                              {card.eyebrow}
+                                            </p>
+                                            <p className="text-[15px] font-semibold tracking-[-0.03em] text-white leading-snug">
+                                              {card.title}
+                                            </p>
+                                            <p className="mt-2 text-[12px] leading-relaxed text-[#c5d9e6]">
+                                              {card.body}
+                                            </p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
 
-                        {!criteriaExpanded ? (
-                          <div className="flex flex-wrap items-center gap-2">
-                            {resultsCriteria.map((criterion, i) => (
-                              <button
-                                key={i}
-                                type="button"
-                                onClick={() => setSelectedCriterion(prev => (prev === i ? null : i))}
-                                title={criterion}
-                                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] transition-all ${
-                                  selectedCriterion === i
-                                    ? 'border-[#163a59] bg-[#163a59] text-white shadow-[0_10px_22px_rgba(22,58,89,0.18)]'
-                                    : effectiveImportance[i] === 'high'
-                                      ? 'border-[#b5e9d6] bg-[rgba(215,245,234,0.82)] text-[#0f8e61] hover:border-[#19b37d] shadow-[0_8px_18px_rgba(25,179,125,0.08)]'
-                                      : 'border-[#d7e4ea] bg-[rgba(221,231,236,0.52)] text-[#48606f] hover:border-[#9fb7c2]'
-                                }`}
-                              >
-                                <span className={`font-semibold ${selectedCriterion === i ? 'text-white/80' : effectiveImportance[i] === 'high' ? 'text-[#0f8e61]' : 'text-[#8698a4]'}`}>C{i + 1}</span>
-                                <span>{buildShortCriterionLabel(criterion)}</span>
-                                {effectiveImportance[i] === 'high' && (
-                                  <span className={`text-[10px] ${selectedCriterion === i ? 'text-white/80' : ''}`}>💪</span>
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-2">
-                            {resultsCriteria.map((criterion, i) => (
-                              <div
-                                key={i}
-                                className={`flex items-center justify-between gap-3 rounded-[12px] border px-3 py-2.5 text-[11px] transition-all ${
-                                  selectedCriterion === i
-                                    ? 'border-[#163a59] bg-[#163a59] text-white shadow-[0_10px_22px_rgba(22,58,89,0.18)]'
-                                    : effectiveImportance[i] === 'high'
-                                      ? 'border-[#b5e9d6] bg-[rgba(215,245,234,0.62)] text-[#48606f]'
-                                      : 'border-[#d7e4ea] bg-[rgba(221,231,236,0.42)] text-[#48606f]'
-                                }`}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedCriterion(prev => (prev === i ? null : i))}
-                                  className="flex min-w-0 flex-1 items-start gap-2 text-left"
-                                  title={selectedCriterion === i ? 'Clear criterion highlight' : 'Highlight this criterion across cards'}
-                                >
-                                  <span className={`mt-0.5 font-semibold flex-shrink-0 ${selectedCriterion === i ? 'text-white/80' : effectiveImportance[i] === 'high' ? 'text-[#0f8e61]' : 'text-[#8698a4]'}`}>C{i + 1}</span>
-                                  <span className="leading-relaxed">{criterion}</span>
-                                  {effectiveImportance[i] === 'high' && (
-                                    <span className={`mt-0.5 flex-shrink-0 text-[10px] ${selectedCriterion === i ? 'text-white/80' : 'text-[#0f8e61]'}`}>💪</span>
-                                  )}
-                                </button>
-                                <div className={`inline-flex items-center p-0.5 rounded-full border transition-colors flex-shrink-0 ${
-                                  selectedCriterion === i
-                                    ? 'border-white/20 bg-white/10'
-                                    : 'border-[#d7e4ea] bg-white/70'
-                                }`}>
-                                  {(['regular', 'high'] as CriterionImportance[]).map((level) => (
-                                    <button
-                                      key={level}
-                                      type="button"
-                                      onClick={() => handleUpdateImportance(i, level)}
-                                      className={`px-2.5 py-0.5 rounded-full text-[9px] font-semibold transition-colors ${
-                                        effectiveImportance[i] === level
-                                          ? selectedCriterion === i
-                                            ? level === 'high'
-                                              ? 'bg-[#f4fffb] text-[#146a55]'
-                                              : 'bg-white text-[#557086]'
-                                            : level === 'high'
-                                              ? 'bg-[#146a55] text-white'
-                                              : 'bg-white text-[#557086]'
-                                          : selectedCriterion === i
-                                            ? 'text-white/70'
-                                            : 'text-[#8698a4] hover:text-[#13212e]'
-                                      }`}
-                                      title={level === 'high' ? 'Stronger preference' : 'Default preference'}
-                                    >
-                                      {level === 'high' ? 'Imp' : 'Regular'}
-                                    </button>
-                                  ))}
-                                </div>
+                        <div className="rounded-[14px] border border-[#dfe9ee] bg-[rgba(255,255,255,0.72)] shadow-[inset_0_1px_0_rgba(255,255,255,0.76)]">
+                          <button
+                            type="button"
+                            onClick={() => setCriteriaExpanded(prev => !prev)}
+                            className="w-full px-4 py-3 text-left"
+                          >
+                            <div className="flex items-center justify-between gap-4">
+                              <p className="text-[10px] font-semibold uppercase tracking-widest text-[#8698a4]">
+                                Search criteria
+                              </p>
+                              <span className="flex-shrink-0 rounded-full border border-[#d7e4ea] bg-white/80 px-3 py-1 text-[11px] font-semibold text-[#587082]">
+                                {criteriaExpanded ? 'Hide' : 'Open'}
+                              </span>
+                            </div>
+                          </button>
+
+                          <div className="px-4 pb-4">
+                            {!criteriaExpanded ? (
+                              <div className="flex flex-wrap items-center gap-2 pt-1">
+                                {resultsCriteria.map((criterion, i) => (
+                                  <button
+                                    key={i}
+                                    type="button"
+                                    onClick={() => setSelectedCriterion(prev => (prev === i ? null : i))}
+                                    title={criterion}
+                                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] transition-all ${
+                                      selectedCriterion === i
+                                        ? 'border-[#163a59] bg-[#163a59] text-white shadow-[0_10px_22px_rgba(22,58,89,0.18)]'
+                                        : effectiveImportance[i] === 'high'
+                                          ? 'border-[#b5e9d6] bg-[rgba(215,245,234,0.82)] text-[#0f8e61] hover:border-[#19b37d] shadow-[0_8px_18px_rgba(25,179,125,0.08)]'
+                                          : 'border-[#d7e4ea] bg-[rgba(221,231,236,0.52)] text-[#48606f] hover:border-[#9fb7c2]'
+                                    }`}
+                                  >
+                                    <span className={`font-semibold ${selectedCriterion === i ? 'text-white/80' : effectiveImportance[i] === 'high' ? 'text-[#0f8e61]' : 'text-[#8698a4]'}`}>C{i + 1}</span>
+                                    <span>{buildShortCriterionLabel(criterion)}</span>
+                                    {effectiveImportance[i] === 'high' && (
+                                      <span className={`text-[10px] ${selectedCriterion === i ? 'text-white/80' : ''}`}>💪</span>
+                                    )}
+                                  </button>
+                                ))}
                               </div>
-                            ))}
+                            ) : (
+                              <div className="flex flex-col gap-2 pt-1">
+                                {resultsCriteria.map((criterion, i) => (
+                                  <div
+                                    key={i}
+                                    className={`flex items-center justify-between gap-3 rounded-[12px] border px-3 py-2.5 text-[11px] transition-all ${
+                                      selectedCriterion === i
+                                        ? 'border-[#163a59] bg-[#163a59] text-white shadow-[0_10px_22px_rgba(22,58,89,0.18)]'
+                                        : effectiveImportance[i] === 'high'
+                                          ? 'border-[#b5e9d6] bg-[rgba(215,245,234,0.62)] text-[#48606f]'
+                                          : 'border-[#d7e4ea] bg-[rgba(221,231,236,0.42)] text-[#48606f]'
+                                    }`}
+                                  >
+                                    <div className="flex min-w-0 flex-1 items-start gap-2 text-left">
+                                      <span className={`mt-0.5 font-semibold flex-shrink-0 ${selectedCriterion === i ? 'text-white/80' : effectiveImportance[i] === 'high' ? 'text-[#0f8e61]' : 'text-[#8698a4]'}`}>C{i + 1}</span>
+                                      <span className="leading-relaxed">{criterion}</span>
+                                      {effectiveImportance[i] === 'high' && (
+                                        <span className={`mt-0.5 flex-shrink-0 text-[10px] ${selectedCriterion === i ? 'text-white/80' : 'text-[#0f8e61]'}`}>💪</span>
+                                      )}
+                                    </div>
+                                    <span
+                                      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[9px] font-semibold flex-shrink-0 ${
+                                        effectiveImportance[i] === 'high'
+                                          ? 'border-[#b5e9d6] bg-[#146a55] text-white'
+                                          : 'border-[#d7e4ea] bg-white/80 text-[#557086]'
+                                      }`}
+                                      title={effectiveImportance[i] === 'high' ? 'Important criterion' : 'Regular criterion'}
+                                    >
+                                      {effectiveImportance[i] === 'high' ? 'Imp' : 'Reg'}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        )}
+                        </div>
                       </div>
                     )}
                   </div>

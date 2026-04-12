@@ -233,63 +233,85 @@ export default function CandidateCard({
               </p>
             )}
 
-            {criteriaMatches.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-[#e3edf1] flex items-start gap-2">
-                <span className="text-[10px] font-bold text-[#163a59] mt-0.5 w-[110px] flex-shrink-0 uppercase tracking-[0.08em] whitespace-nowrap">Criteria Match</span>
-                <div className="flex flex-wrap gap-1.5 min-w-0 flex-1">
-                  {criteriaMatches.map((criterion, i) => {
-                    const tone =
-                      criterion.status === 'match'
-                        ? 'bg-[#d7f5ea] text-[#0f8e61] border-[#b5e9d6]'
-                        : criterion.status === 'partial'
-                          ? 'bg-[#fff0bf] text-[#af7c05] border-[#ffe08b]'
-                          : 'bg-[#ffe3e3] text-[#d9485f] border-[#ffc5cc]';
-                    const isSelected = selectedCriterion === i;
-                    return (
-                      <span
-                        key={i}
-                        title={`${criterion.label}: ${criterion.reason}`}
-                        className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border font-semibold transition-all ${tone} ${isSelected ? 'ring-2 ring-[#163a59] ring-offset-1 scale-[1.03]' : ''}`}
-                      >
-                        C{i + 1}
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {enriched.length > 0 && (
-              <div className="mt-3 rounded-[12px] border border-[rgba(255,179,102,0.45)] bg-[linear-gradient(135deg,rgba(255,244,214,0.96),rgba(255,233,215,0.96)_45%,rgba(223,240,255,0.92))] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.52)]">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <div className="w-[30px] h-[30px] rounded-[9px] bg-[linear-gradient(135deg,#ffd66b,#ff8e42_50%,#1f7cf0)] flex items-center justify-center text-[15px] shadow-[0_8px_18px_rgba(19,33,46,0.12)] border border-[rgba(255,255,255,0.65)] flex-shrink-0">
-                    🧙‍♀️
-                  </div>
-                  <span className="text-[10px] font-bold text-[#163a59] uppercase tracking-[0.08em] whitespace-nowrap flex-shrink-0">AI read</span>
-                  <div className="flex flex-wrap gap-1.5 min-w-0 flex-1">
-                    {enriched.map((badge, i) => (
-                      <span key={i} title={badge.title} className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border ${badge.cls}`}>
-                        {badge.icon} {badge.label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* AI Summary */}
             <div className="mt-3 pt-3 border-t border-[#e3edf1]">
-              {sumLoading && !summary && (
-                <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-[#3b82f6] animate-pulse" />
-                  <span className="text-[11px] text-[#8698a4]">I&apos;m reading the fit…</span>
+              <div className="grid gap-3 lg:grid-cols-[minmax(240px,0.72fr)_minmax(0,1.08fr)] lg:items-stretch">
+                <div className="flex flex-col gap-3">
+                  {criteriaMatches.length > 0 && (
+                    <div className="rounded-[12px] border border-[#e3edf1] bg-[rgba(255,255,255,0.8)] px-3 py-3">
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-[#163a59] uppercase tracking-[0.08em] whitespace-nowrap">Criteria match</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 min-w-0">
+                        {criteriaMatches.map((criterion, i) => {
+                          const tone =
+                            criterion.status === 'match'
+                              ? 'bg-[#d7f5ea] text-[#0f8e61] border-[#b5e9d6]'
+                              : criterion.status === 'partial'
+                                ? 'bg-[#fff0bf] text-[#af7c05] border-[#ffe08b]'
+                                : 'bg-[#ffe3e3] text-[#d9485f] border-[#ffc5cc]';
+                          const isSelected = selectedCriterion === i;
+                          return (
+                            <span
+                              key={i}
+                              title={`${criterion.label}: ${criterion.reason}`}
+                              className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border font-semibold transition-all ${tone} ${isSelected ? 'ring-2 ring-[#163a59] ring-offset-1 scale-[1.03]' : ''}`}
+                            >
+                              C{i + 1}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {enriched.length > 0 && (
+                    <div className="rounded-[12px] border border-[rgba(255,179,102,0.45)] bg-[linear-gradient(135deg,rgba(255,244,214,0.96),rgba(255,233,215,0.96)_45%,rgba(223,240,255,0.92))] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.52)]">
+                      <div className="mb-2 flex items-center gap-2">
+                        <div className="w-5 h-5 rounded-[7px] bg-[linear-gradient(135deg,#ffd66b,#ff8e42_50%,#1f7cf0)] flex items-center justify-center text-[11px] shadow-[0_6px_14px_rgba(19,33,46,0.12)] border border-[rgba(255,255,255,0.7)] flex-shrink-0">
+                          🧙‍♀️
+                        </div>
+                        <span className="text-[10px] font-bold text-[#163a59] uppercase tracking-[0.08em] whitespace-nowrap">AI read</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 min-w-0">
+                        {enriched.map((badge, i) => (
+                          <span key={i} title={badge.title} className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border ${badge.cls}`}>
+                            {badge.icon} {badge.label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-              {summary && (
-                <p className="text-[13px] text-[#587082] leading-[1.55]">
-                  {sumDone ? renderSummary(summary) : summary}
-                </p>
-              )}
+
+                <div className="relative overflow-hidden rounded-[12px] border border-[#dbe7ee] bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(247,251,253,0.92))] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(19,33,46,0.04)]">
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-[radial-gradient(circle_at_left,rgba(31,124,240,0.1),transparent_72%)]"
+                  />
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-y-3 left-0 w-px bg-[linear-gradient(180deg,transparent,rgba(31,124,240,0.2),transparent)]"
+                  />
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-[#163a59] uppercase tracking-[0.08em] whitespace-nowrap">AI summary</span>
+                  </div>
+                  {sumLoading && !summary && (
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#3b82f6] animate-pulse" />
+                      <span className="text-[11px] text-[#8698a4]">I&apos;m reading the fit…</span>
+                    </div>
+                  )}
+                  {summary ? (
+                    <p className="text-[13px] text-[#587082] leading-[1.55]">
+                      {sumDone ? renderSummary(summary) : summary}
+                    </p>
+                  ) : !sumLoading ? (
+                    <p className="text-[12px] text-[#8698a4] leading-[1.55]">
+                      I&apos;ll add a short read on why this profile stands out against the brief.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
             </div>
 
             {/* Assistant actions */}
