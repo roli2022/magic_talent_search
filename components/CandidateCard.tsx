@@ -175,7 +175,7 @@ export default function CandidateCard({
 
   return (
     <div className={`rounded-[10px] border transition-all duration-200 overflow-hidden bg-[rgba(255,255,255,0.9)] shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_1px_0_rgba(19,33,46,0.03),0_18px_38px_rgba(19,33,46,0.08),0_34px_70px_rgba(19,33,46,0.04)] ${matchLabel.borderCls}`}>
-      <div className="p-[18px]">
+      <div className="p-[16px]">
         <div className="flex items-start gap-3">
 
           {/* Avatar */}
@@ -221,24 +221,20 @@ export default function CandidateCard({
               </div>
             </div>
 
-            {candidate.headline && (
-              <p className="text-[13px] text-[#13212e] mt-1 line-clamp-1 font-medium">{candidate.headline}</p>
-            )}
-
             {topExp && (
-              <p className="text-[12px] text-[#587082] mt-1.5 leading-[1.4]">
-                <span className="text-[#13212e] font-semibold">{topExp.title}</span>
-                {topExp.company && <span> at {topExp.company}</span>}
-                {topExp.date && <span className="text-[#8698a4]"> · {topExp.date}</span>}
+              <p className="text-[12px] text-[#4e6473] font-medium mt-1 leading-[1.35]">
+                <span>{topExp.title}</span>
+                {topExp.company && <span> | {topExp.company}</span>}
+                {topExp.date && <span className="text-[#667d8d]"> | {topExp.date}</span>}
               </p>
             )}
 
-            <div className="mt-3 pt-3 border-t border-[#e3edf1]">
-              <div className="grid gap-3 lg:grid-cols-[minmax(240px,0.72fr)_minmax(0,1.08fr)] lg:items-stretch">
-                <div className="flex flex-col gap-3">
+            <div className="mt-2.5 pt-2.5 border-t border-[#e3edf1]">
+              <div className="grid gap-2.5 lg:grid-cols-[minmax(240px,0.72fr)_minmax(0,1.08fr)] lg:items-stretch">
+                <div className="flex flex-col gap-2.5">
                   {criteriaMatches.length > 0 && (
-                    <div className="rounded-[12px] border border-[#e3edf1] bg-[rgba(255,255,255,0.8)] px-3 py-3">
-                      <div className="mb-2 flex items-center gap-2">
+                    <div className="rounded-[12px] border border-[#e3edf1] bg-[rgba(255,255,255,0.8)] px-3 py-2.5">
+                      <div className="mb-1.5 flex items-center gap-2">
                         <span className="text-[10px] font-bold text-[#163a59] uppercase tracking-[0.08em] whitespace-nowrap">Criteria match</span>
                       </div>
                       <div className="flex flex-wrap gap-1.5 min-w-0">
@@ -265,8 +261,8 @@ export default function CandidateCard({
                   )}
 
                   {enriched.length > 0 && (
-                    <div className="rounded-[12px] border border-[rgba(255,179,102,0.45)] bg-[linear-gradient(135deg,rgba(255,244,214,0.96),rgba(255,233,215,0.96)_45%,rgba(223,240,255,0.92))] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.52)]">
-                      <div className="mb-2 flex items-center gap-2">
+                    <div className="rounded-[12px] border border-[rgba(255,179,102,0.45)] bg-[linear-gradient(135deg,rgba(255,244,214,0.96),rgba(255,233,215,0.96)_45%,rgba(223,240,255,0.92))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.52)]">
+                      <div className="mb-1.5 flex items-center gap-2">
                         <div className="w-5 h-5 rounded-[7px] bg-[linear-gradient(135deg,#ffd66b,#ff8e42_50%,#1f7cf0)] flex items-center justify-center text-[11px] shadow-[0_6px_14px_rgba(19,33,46,0.12)] border border-[rgba(255,255,255,0.7)] flex-shrink-0">
                           🧙‍♀️
                         </div>
@@ -283,7 +279,7 @@ export default function CandidateCard({
                   )}
                 </div>
 
-                <div className="relative overflow-hidden rounded-[12px] border border-[#dbe7ee] bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(247,251,253,0.92))] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(19,33,46,0.04)]">
+                <div className="relative overflow-hidden rounded-[12px] border border-[#dbe7ee] bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(247,251,253,0.92))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(19,33,46,0.04)]">
                   <div
                     aria-hidden="true"
                     className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-[radial-gradient(circle_at_left,rgba(31,124,240,0.1),transparent_72%)]"
@@ -292,7 +288,7 @@ export default function CandidateCard({
                     aria-hidden="true"
                     className="pointer-events-none absolute inset-y-3 left-0 w-px bg-[linear-gradient(180deg,transparent,rgba(31,124,240,0.2),transparent)]"
                   />
-                  <div className="mb-2 flex items-center gap-2">
+                  <div className="mb-1.5 flex items-center gap-2">
                     <span className="text-[10px] font-bold text-[#163a59] uppercase tracking-[0.08em] whitespace-nowrap">AI summary</span>
                   </div>
                   {sumLoading && !summary && (
@@ -315,7 +311,7 @@ export default function CandidateCard({
             </div>
 
             {/* Assistant actions */}
-            <div className="mt-3 pt-3 border-t border-[#e3edf1] flex items-start gap-3">
+            <div className="mt-2.5 pt-2.5 border-t border-[#e3edf1] flex items-start gap-3">
               <span className="text-[10px] font-bold text-[#163a59] mt-1 w-[110px] flex-shrink-0 uppercase tracking-[0.08em] whitespace-nowrap">Next steps</span>
               <div className="flex flex-row gap-2 flex-wrap items-center">
                 {/* LinkedIn — branded icon button */}
@@ -329,28 +325,38 @@ export default function CandidateCard({
                   <LinkedInIcon className="w-3.5 h-3.5 fill-white" />
                 </a>
 
-                {/* AI Phone Screen */}
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-[9px] border border-[#cad9df] bg-white/75 px-3 py-1.5 text-[11px] font-semibold text-[#587082] transition-colors hover:border-[#9fb7c2] hover:text-[#163a59] hover:bg-white"
+                  title="Send Email"
+                >
+                  <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-none stroke-current" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />
+                    <path d="m22 8-10 6L2 8" />
+                  </svg>
+                  <span>Send Email</span>
+                </button>
+
+                {/* AI Phone Call */}
                 <div className="relative group/phone flex-shrink-0">
                   <button
                     type="button"
                     onClick={() => setInterviewQueued(q => !q)}
-                    className={`w-7 h-7 rounded-[8px] flex items-center justify-center transition-colors border relative ${
+                    className={`inline-flex items-center gap-2 rounded-[9px] px-3 py-1.5 text-[11px] font-semibold transition-colors border relative ${
                       interviewQueued
                         ? 'bg-[#163a59] border-[#163a59] text-white'
-                        : 'border-[#cad9df] text-[#587082] hover:border-[#19b37d] hover:text-[#0f8e61] hover:bg-[#d7f5ea]'
+                        : 'border-[#cad9df] bg-white/75 text-[#587082] hover:border-[#19b37d] hover:text-[#0f8e61] hover:bg-[#d7f5ea]'
                     }`}
                   >
-                    {/* Phone + sparkle to signal AI */}
-                    <svg viewBox="0 0 24 24" className="w-3 h-3 fill-none stroke-current" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-none stroke-current" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.27h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.91a16 16 0 0 0 6.06 6.06l.91-.91a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7a2 2 0 0 1 1.72 2z" />
                     </svg>
-                    {/* AI sparkle badge */}
-                    <span className={`absolute -top-1 -right-1 text-[8px] leading-none ${interviewQueued ? 'text-white' : 'text-[#19b37d]'}`}>✦</span>
+                    <span>AI Phone Call</span>
+                    <span className={`text-[9px] leading-none ${interviewQueued ? 'text-white' : 'text-[#19b37d]'}`}>✦</span>
                   </button>
-                  {/* Hover tooltip */}
                   <div className="pointer-events-none absolute bottom-full right-0 mb-1.5 opacity-0 group-hover/phone:opacity-100 transition-opacity duration-150">
                     <div className={`whitespace-nowrap text-[10px] font-semibold px-2 py-1 rounded-[8px] ${interviewQueued ? 'bg-[#163a59] text-white' : 'bg-[#13212e] text-white'}`}>
-                      {interviewQueued ? 'Queued for AI screen' : 'AI Phone Screen'}
+                      {interviewQueued ? 'Queued for AI phone call' : 'AI Phone Call'}
                     </div>
                   </div>
                 </div>
